@@ -11,6 +11,7 @@ from loguru import logger
 from app.config import settings
 from app.database import engine, Base
 from app.auth.routes import router as auth_router
+from app.icp.routes import router as icp_router
 
 
 # ── Lifespan ─────────────────────────────────────────────────
@@ -48,6 +49,7 @@ app.add_middleware(
 
 # ── Routers ──────────────────────────────────────────────────
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
+app.include_router(icp_router,  prefix="/api/v1/icp",  tags=["icp"])
 
 
 # ── Health Check ─────────────────────────────────────────────

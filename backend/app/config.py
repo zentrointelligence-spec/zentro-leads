@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     ZIMS_INTERNAL_API_KEY: str = ""
 
     # ── AI ───────────────────────────────────────────────────
-    ANTHROPIC_API_KEY: str
+    ANTHROPIC_API_KEY: str = ""
 
     # ── Scraping ─────────────────────────────────────────────
     GOOGLE_MAPS_API_KEY: str = ""

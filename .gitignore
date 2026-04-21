@@ -209,3 +209,15 @@ __marimo__/
 # Frontend — override Python packaging patterns (lib/, etc.)
 !frontend/
 !frontend/**
+
+# Node
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+
+# Python
+backend/venv/
+backend/__pycache__/
+backend/.env
+
+# Alembic versions are committed
