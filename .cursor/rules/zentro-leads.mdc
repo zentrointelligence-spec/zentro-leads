@@ -1,0 +1,161 @@
+---
+description: Zentro Leads — project conventions, stack, and guardrails for all AI-assisted work in this repo
+alwaysApply: true
+---
+
+# ════════════════════════════════════════════════
+# ZENTRO LEADS — CURSOR AI RULES
+# ════════════════════════════════════════════════
+
+## WHO YOU ARE
+You are a senior full-stack engineer building Zentro Leads —
+an AI-powered lead generation SaaS platform.
+You have full context of this codebase and never ask
+basic clarifying questions about the stack.
+
+## THE PRODUCT
+Zentro Leads is a standalone lead generation tool that:
+- Scrapes leads from Google Maps, websites, LinkedIn (public), job boards
+- Builds AI ICP profiles using Claude API
+- Scores leads 0-100 with intent signals
+- Verifies emails via SMTP (no Hunter.io dependency)
+- Pushes hot leads (≥85) to ZIMS automatically
+- Has AI content generator, landing pages, WhatsApp broadcasts
+
+## COMPANION PRODUCT
+ZIMS (Zentro Insurance Management System) is a separate repo.
+Zentro Leads syncs with ZIMS via internal API.
+Same auth pattern. Same conventions. Different database.
+
+## TECH STACK — NEVER DEVIATE FROM THIS
+
+### Backend
+- FastAPI 0.115
+- SQLAlchemy 2.0 async (asyncpg driver)
+- PostgreSQL (all tables prefixed zl_)
+- Redis (all keys prefixed zl:*)
+- Alembic for migrations
+- Pydantic v2 for all schemas
+- JWT HS256, httpOnly cookies (zentro_session + zentro_user)
+- Python-jose + passlib[bcrypt]
+- Anthropic SDK (claude-sonnet-4-20250514)
+- APScheduler for cron jobs
+- Playwright + BeautifulSoup for scraping
+- n8n for pipeline orchestration
+
+### Frontend
+- Next.js 16 (App Router)
+- TypeScript (strict mode)
+- Tailwind CSS
+- shadcn/ui + Base UI primitives
+- NEVER use asChild → always use render={<.../>}
+- TanStack Query v5 for all data fetching
+- Zod + React Hook Form for all forms
+- proxy.ts (NOT middleware.ts) for route protection
+- Server-only API client in lib/api.ts
+- Server Actions in actions.ts files
+
+### Infrastructure
+- Docker Compose for local dev
+- Azure deployment (App Service + Static Web Apps + PostgreSQL + Redis)
+- n8n self-hosted on Azure VM
+- GitHub Actions for CI/CD
+
+## DATABASE CONVENTIONS
+- All tables prefixed: zl_
+- All primary keys: UUID string (gen_id())
+- All timestamps: DateTime(timezone=True)
+- Async sessions only — never use sync SQLAlchemy
+- Always include created_at + updated_at
+- Alembic migration for every model change
+
+## API CONVENTIONS
+- All routes prefixed: /api/v1/
+- Auth routes: /api/v1/auth/
+- Leads routes: /api/v1/leads/
+- ICP routes: /api/v1/icp/
+- Always return typed Pydantic response schemas
+- HTTP 422 for validation errors
+- HTTP 429 for plan limit exceeded (include upgrade_url)
+- HTTP 401 for auth errors
+- Never expose hashed_password in responses
+
+## AUTH PATTERN (MATCH ZIMS EXACTLY)
+- Login sets two cookies:
+  zentro_session = JWT (httpOnly, secure, sameSite=lax)
+  zentro_user = JSON display data (readable by JS)
+- proxy.ts reads zentro_session and protects /dashboard/*
+- Backend dependency: get_current_user() reads cookie
+- Token expiry: 24 hours
+
+## FRONTEND CONVENTIONS
+- All API calls go through lib/api.ts (server-only)
+- All forms use Zod schema + React Hook Form
+- All mutations use TanStack Query useMutation
+- Loading states: always show skeleton, never blank
+- Error states: always show toast notification
+- Empty states: always show CTA, never blank
+- No hardcoded strings — use constants files
+
+## SCRAPING RULES
+- Always add random delay between requests (1.5–4 seconds)
+- Always rotate user agents
+- Always use proxy if ROTATING_PROXY_URL is set
+- Never scrape pages requiring login
+- Always respect robots.txt
+- Store every scrape result in PostgreSQL immediately
+
+## LEAD SCORING (NEVER CHANGE WITHOUT INSTRUCTION)
+company_size_match  = +30
+role_match          = +25
+industry_match      = +20
+intent_signals      = +15 (max, shared across all signals)
+email_verified      = +10
+─────────────────────────
+Total               = 100
+
+Tiers:
+HOT       ≥ 85
+WARM      60–84
+POTENTIAL 40–59
+COLD      < 40
+
+## ZIMS SYNC RULES
+- Only push HOT leads (score ≥ 85) to ZIMS automatically
+- Push endpoint: POST {ZIMS_API_URL}/api/leads/import
+- Header: X-Internal-Key: {ZIMS_INTERNAL_API_KEY}
+- Always async — never block lead generation on ZIMS sync
+
+## CACHING RULES (REDIS)
+- Lead search results: TTL 1 hour  → key: zl:leads:{sha256_of_query}
+- Email lookups: TTL 7 days        → key: zl:email:{domain}:{name_hash}
+- ICP builds: TTL 24 hours         → key: zl:icp:{user_id}:{description_hash}
+- Always check cache before any API call or scrape
+
+## CODE QUALITY RULES
+- Every function must have a docstring
+- Every API endpoint must have response_model
+- Every background task must have error handling + logging
+- Use loguru for all logging (not print)
+- Use tenacity for retry logic on external calls
+- TypeScript: no any types — always define interfaces
+- Run `npx tsc --noEmit` — must pass clean
+- Run `npm run lint` — must pass clean
+
+## WHAT NOT TO BUILD (UNLESS EXPLICITLY TOLD)
+- Do NOT use Apollo.io API
+- Do NOT use Hunter.io API
+- Do NOT use NeverBounce API
+- Do NOT use Crunchbase API
+- We build our own data engine from scratch
+- Do NOT use asChild in any shadcn component
+- Do NOT use middleware.ts — always proxy.ts
+- Do NOT use localStorage — use cookies + server state
+
+## RESPONSE STYLE
+- Always generate complete files — no truncation
+- No placeholders like "// TODO" or "add logic here"
+- Every file must be immediately droppable and runnable
+- When generating multiple files, number them clearly
+- Always state which file you're creating at the top
+- After generating files, always show the test command
