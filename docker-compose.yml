@@ -1,0 +1,91 @@
+version: "3.9"
+
+services:
+  # ── PostgreSQL ──────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: zl_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: zentro_leads
+      POSTGRES_USER: zl_user
+      POSTGRES_PASSWORD: zl_pass
+    ports:
+      - "5433:5432"
+    volumes:
+      - zl_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zl_user -d zentro_leads"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ───────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: zl_redis
+    restart: unless-stopped
+    command: redis-server --requirepass zl_redis_pass
+    ports:
+      - "6380:6379"
+    volumes:
+      - zl_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "zl_redis_pass", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI Backend ─────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: zl_backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+
+  # ── n8n Workflow Engine ─────────────────────────────────────
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: zl_n8n
+    restart: unless-stopped
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=zl_n8n_pass
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=db
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=zentro_leads
+      - DB_POSTGRESDB_USER=zl_user
+      - DB_POSTGRESDB_PASSWORD=zl_pass
+      - DB_POSTGRESDB_SCHEMA=n8n
+    ports:
+      - "5678:5678"
+    volumes:
+      - zl_n8ndata:/home/node/.n8n
+      - ./n8n/workflows:/home/node/.n8n/workflows
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  zl_pgdata:
+  zl_redisdata:
+  zl_n8ndata:
