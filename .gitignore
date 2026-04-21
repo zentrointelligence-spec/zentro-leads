@@ -213,6 +213,8 @@ __marimo__/
 # Node
 frontend/node_modules/
 frontend/.next/
+frontend/tsconfig.tsbuildinfo
+*.tsbuildinfo
 frontend/.env.local
 
 # Python
