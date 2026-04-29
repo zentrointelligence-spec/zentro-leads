@@ -115,6 +115,8 @@ async def upsert_company(data: dict[str, Any], db: AsyncSession) -> ZLCompany:
             existing.website = website
         if domain:
             existing.domain = domain
+        if data.get("industry") and not existing.industry:
+            existing.industry = data.get("industry")
         if data.get("phone"):
             existing.phone = data.get("phone")
         if data.get("address"):
@@ -139,6 +141,7 @@ async def upsert_company(data: dict[str, Any], db: AsyncSession) -> ZLCompany:
         name=data.get("name") or "Unknown",
         domain=domain,
         website=website,
+        industry=data.get("industry"),
         phone=data.get("phone"),
         address=data.get("address"),
         city=data.get("city"),
@@ -279,18 +282,8 @@ async def generate_leads_for_icp(user_id: str, icp_id: str, db: AsyncSession) ->
                 if company.website:
                     site_data = await scrape_company_website(company.website)
 
-                # Write site-scraped enrichment back to the company ORM row so
-                # scoring sees the latest data (Maps API doesn't return these fields).
-                if site_data.get("industry") and not company.industry:
-                    company.industry = site_data["industry"]
-                if site_data.get("employee_range") and not company.employee_range:
-                    company.employee_range = site_data["employee_range"]
-                if site_data.get("is_hiring") and not company.is_hiring:
-                    company.is_hiring = bool(site_data["is_hiring"])
-                if site_data.get("in_the_news") and not company.in_the_news:
-                    company.in_the_news = bool(site_data["in_the_news"])
-                if site_data.get("funding_stage") and not company.funding_stage:
-                    company.funding_stage = site_data["funding_stage"]
+                # Write social links back from the website scraper — these are the
+                # only fields scrape_company_website actually returns beyond people/emails/phones.
                 social = site_data.get("social") or {}
                 if social.get("linkedin") and not company.linkedin_url:
                     company.linkedin_url = social["linkedin"]
@@ -303,8 +296,10 @@ async def generate_leads_for_icp(user_id: str, icp_id: str, db: AsyncSession) ->
                 domain = company.domain or extract_domain(company.website)
 
                 people = site_data.get("people") or []
+                # No real people found — company row is stored for future enrichment
+                # but we do not create phantom "Decision Maker" lead rows.
                 if not people:
-                    people = [{"name": "Decision Maker", "title": "Unknown"}]
+                    continue
 
                 for person_data in people[:5]:
                     try:
@@ -382,9 +377,10 @@ async def generate_leads_for_icp(user_id: str, icp_id: str, db: AsyncSession) ->
 
                         score_result = calculate_lead_score(person_dict, company_dict, icp_dict)
 
-                        # Cold leads are stored — they're valid data and visible in the UI.
-                        # Skip only if completely unscorable (score == 0 AND no email AND no website).
-                        if score_result["score"] == 0 and not person.email and not company.website:
+                        # Store cold leads — they're real contacts and visible in the UI.
+                        # Only skip the absolute floor: real person but literally zero score
+                        # and no email (nothing to work with at all).
+                        if score_result["score"] == 0 and not person.email:
                             counters["skipped_cold"] += 1
                             continue
 

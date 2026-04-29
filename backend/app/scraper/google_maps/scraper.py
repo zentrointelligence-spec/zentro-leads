@@ -21,6 +21,67 @@ from app.redis_client import TTL_LEADS, get_cached, set_cached
 TEXT_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/textsearch/json"
 PLACE_DETAILS_URL = "https://maps.googleapis.com/maps/api/place/details/json"
 
+# Maps Google Places `types` to a human-readable industry string.
+# Order matters — first match wins when iterating place types.
+_PLACE_TYPE_TO_INDUSTRY: dict[str, str] = {
+    "insurance_agency": "Insurance",
+    "bank": "Financial Services",
+    "financial_institution": "Financial Services",
+    "accounting": "Accounting & Finance",
+    "real_estate_agency": "Real Estate",
+    "hospital": "Healthcare",
+    "doctor": "Healthcare",
+    "dentist": "Healthcare",
+    "pharmacy": "Healthcare",
+    "physiotherapist": "Healthcare",
+    "school": "Education",
+    "university": "Education",
+    "restaurant": "Food & Beverage",
+    "cafe": "Food & Beverage",
+    "bakery": "Food & Beverage",
+    "bar": "Food & Beverage",
+    "lawyer": "Legal Services",
+    "law_firm": "Legal Services",
+    "car_dealer": "Automotive",
+    "car_repair": "Automotive",
+    "car_rental": "Automotive",
+    "gym": "Fitness & Wellness",
+    "beauty_salon": "Beauty & Wellness",
+    "spa": "Beauty & Wellness",
+    "hotel": "Hospitality",
+    "lodging": "Hospitality",
+    "travel_agency": "Travel & Tourism",
+    "marketing_agency": "Marketing & Advertising",
+    "advertising_agency": "Marketing & Advertising",
+    "electrician": "Construction & Trades",
+    "plumber": "Construction & Trades",
+    "roofing_contractor": "Construction & Trades",
+    "general_contractor": "Construction",
+    "moving_company": "Logistics",
+    "storage": "Logistics",
+    "clothing_store": "Retail",
+    "electronics_store": "Retail",
+    "furniture_store": "Retail",
+    "hardware_store": "Retail",
+    "grocery_or_supermarket": "Retail",
+    "shopping_mall": "Retail",
+    "store": "Retail",
+    "florist": "Retail",
+    "jewelry_store": "Retail",
+    "book_store": "Retail",
+    "bicycle_store": "Retail",
+    "shoe_store": "Retail",
+}
+
+
+def _infer_industry_from_types(types: list[str]) -> str | None:
+    """Return the first matching industry string for a list of Google place types."""
+    for t in types:
+        industry = _PLACE_TYPE_TO_INDUSTRY.get(t)
+        if industry:
+            return industry
+    return None
+
 
 def _maps_cache_key(query: str, location: str) -> str:
     """Build Redis cache key fragment (zl: prefix applied by redis_client)."""
@@ -112,7 +173,8 @@ async def scrape_google_maps(
                     "place_id": place_id,
                     "fields": (
                         "name,website,formatted_phone_number,formatted_address,"
-                        "rating,user_ratings_total,business_status,address_components,geometry"
+                        "rating,user_ratings_total,business_status,address_components,"
+                        "geometry,types"
                     ),
                     "key": settings.GOOGLE_MAPS_API_KEY,
                 }
@@ -131,6 +193,14 @@ async def scrape_google_maps(
                 if isinstance(website, str) and website:
                     website = website.strip()
 
+                # Combine types from Detail result and Text Search result for best coverage.
+                place_types: list[str] = list(
+                    dict.fromkeys(
+                        (res.get("types") or []) + (place.get("types") or [])
+                    )
+                )
+                industry = _infer_industry_from_types(place_types)
+
                 results.append(
                     {
                         "name": res.get("name") or place.get("name") or "Unknown",
@@ -144,6 +214,7 @@ async def scrape_google_maps(
                         "google_reviews": res.get("user_ratings_total"),
                         "latitude": (res.get("geometry") or {}).get("location", {}).get("lat"),
                         "longitude": (res.get("geometry") or {}).get("location", {}).get("lng"),
+                        "industry": industry,
                         "data_source": "google_maps",
                     }
                 )
