@@ -257,22 +257,29 @@ async def generate_leads_for_icp(user_id: str, icp_id: str, db: AsyncSession) ->
         "potential": 0,
     }
 
-    queries = (icp.search_queries or [])[:5] if icp.search_queries else []
-    if not queries:
-        if icp.industries and icp.locations:
-            queries = [f"{icp.industries[0]} {icp.locations[0]}"]
-            logger.info(f"ICP {icp_id}: no search_queries set — derived query from industries+locations: {queries}")
-        else:
-            queries = [icp.name]
-            logger.warning(
-                f"ICP {icp_id} ('{icp.name}') has no search_queries, industries, or locations. "
-                f"Falling back to ICP name as search query. "
-                f"Use POST /api/v1/icp/build to generate a properly populated ICP, "
-                f"or PATCH the ICP to add search_queries/industries/locations before generating."
-            )
+    queries_raw = icp.search_queries or []
+    if queries_raw:
+        # search_queries are self-contained Maps queries that already embed the city
+        # (e.g. "insurance broker Kuala Lumpur"). Do NOT append a separate location
+        # or the scraper produces "insurance broker Penang Kuala Lumpur" — wrong city
+        # and a different cache key than expected.
+        queries = queries_raw[:8]
+        location = ""
+        logger.info(f"ICP {icp_id}: using {len(queries)} search_queries (city embedded), location=''")
+    elif icp.industries and icp.locations:
+        queries = [f"{icp.industries[0]} {icp.locations[0]}"]
+        location = ""
+        logger.info(f"ICP {icp_id}: no search_queries — derived from industries+locations: {queries}")
+    else:
+        queries = [icp.name]
+        location = icp.locations[0] if icp.locations else ""
+        logger.warning(
+            f"ICP {icp_id} ('{icp.name}') has no search_queries, industries, or locations. "
+            f"Falling back to ICP name as search query. "
+            f"Use POST /api/v1/icp/build to generate a properly populated ICP."
+        )
 
-    location = icp.locations[0] if icp.locations else ""
-    logger.info(f"ICP {icp_id}: running {len(queries)} query/queries, location={location!r}, queries={queries}")
+    logger.info(f"ICP {icp_id}: running {len(queries)} queries — {queries}")
 
     for query in queries:
         try:
