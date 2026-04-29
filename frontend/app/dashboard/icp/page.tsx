@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Target, Plus, Loader2, X, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
+import { Target, Plus, Loader2, X, Sparkles, ChevronDown, ChevronUp, Zap } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { generateLeads } from "@/app/dashboard/leads/actions";
 
 interface ICP {
   id: string;
@@ -49,6 +50,19 @@ async function buildICPWithAI(description: string): Promise<ICP> {
 
 function ICPCard({ icp }: { icp: ICP }) {
   const [expanded, setExpanded] = useState(false);
+  const [isPending, startTransition] = useTransition();
+
+  function handleGenerate(e: React.MouseEvent) {
+    e.stopPropagation();
+    startTransition(async () => {
+      const result = await generateLeads(icp.id);
+      if (result.ok) {
+        toast.success(result.message ?? "Lead generation started — results appear shortly.");
+      } else {
+        toast.error(result.error ?? "Lead generation failed.");
+      }
+    });
+  }
 
   return (
     <div className="bg-[#0F1B2D] border border-white/8 rounded-xl overflow-hidden">
@@ -75,11 +89,29 @@ function ICPCard({ icp }: { icp: ICP }) {
               <span className="text-slate-500 text-xs">{icp.industries.length} industries</span>
             </div>
           </div>
-          {expanded ? (
-            <ChevronUp className="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5" />
-          ) : (
-            <ChevronDown className="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5" />
-          )}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={handleGenerate}
+              disabled={isPending}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors",
+                "bg-[#3B6FFF]/15 text-[#3B6FFF] hover:bg-[#3B6FFF]/25",
+                "disabled:opacity-50 disabled:cursor-not-allowed"
+              )}
+            >
+              {isPending ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Zap className="w-3.5 h-3.5" />
+              )}
+              {isPending ? "Starting…" : "Generate Leads"}
+            </button>
+            {expanded ? (
+              <ChevronUp className="w-4 h-4 text-slate-500 mt-0.5" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-slate-500 mt-0.5" />
+            )}
+          </div>
         </div>
       </div>
 
