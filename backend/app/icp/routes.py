@@ -31,14 +31,14 @@ CLAUDE_ICP_PROMPT = """You are an expert B2B sales strategist. A user sells the 
 Return ONLY a JSON object (no markdown, no explanation) with these exact keys:
 {{
   "suggested_name": "string (3-5 word ICP name)",
-  "industries": ["string (5-8 best industries)"],
-  "job_titles": ["string (6-10 decision maker titles)"],
+  "industries": ["string (5-8 best matching industries, e.g. 'Insurance', 'Financial Services', 'Real Estate')"],
+  "job_titles": ["string (6-10 decision maker job titles, e.g. 'CEO', 'Managing Director', 'Operations Manager')"],
   "seniority_levels": ["string (from: c-level, director, manager, individual)"],
   "company_sizes": ["string (from: 1-10, 10-50, 50-200, 200-500, 500+)"],
-  "locations": ["string (top locations based on description)"],
+  "locations": ["string (specific city names only, e.g. 'Kuala Lumpur', 'Singapore', 'Dubai')"],
   "keywords": ["string (8-12 relevant keywords)"],
   "intent_signals": ["string (from: hiring, funded, expanding, job_change, in_the_news, new_product)"],
-  "search_queries": ["string (5-8 Google search queries to find these companies)"]
+  "search_queries": ["string (5-8 Google Maps business search queries — these MUST be short business category + city phrases that return real map listings, e.g. 'insurance agency Kuala Lumpur', 'insurance broker Singapore', 'financial advisor Penang'. DO NOT use generic web phrases like 'SME companies Malaysia' or 'fast growing startups'. Each query must be a real business type that appears on Google Maps.)"]
 }}"""
 
 
