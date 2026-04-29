@@ -75,11 +75,21 @@ _PLACE_TYPE_TO_INDUSTRY: dict[str, str] = {
 
 
 def _infer_industry_from_types(types: list[str]) -> str | None:
-    """Return the first matching industry string for a list of Google place types."""
+    """Return the first matching industry string for a list of Google place types.
+
+    Returns None (no crash) when no type maps to an industry — the caller treats
+    None as an empty industry field. Unknown types are logged at DEBUG level so
+    the mapping table can be expanded over time.
+    """
     for t in types:
         industry = _PLACE_TYPE_TO_INDUSTRY.get(t)
         if industry:
             return industry
+    # Filter out generic catch-all types before logging so we don't flood logs
+    _GENERIC = {"establishment", "point_of_interest", "premise", "subpremise", "political"}
+    unknown = [t for t in types if t not in _PLACE_TYPE_TO_INDUSTRY and t not in _GENERIC]
+    if unknown:
+        logger.debug(f"Unmapped Google place types (expand _PLACE_TYPE_TO_INDUSTRY): {unknown}")
     return None
 
 

@@ -74,12 +74,20 @@ def _role_score_fixed(job_title: str, icp_titles: list[str], icp_seniority: list
 
 
 def _industry_score(industry: str, icp_industries: list[str]) -> int:
-    """Score industry match (max 20)."""
+    """Score industry match (max 20).
+
+    Bidirectional substring so "Finance" (ICP) matches "Financial Services"
+    (company) and "Financial Services" (ICP) matches "Finance" (company).
+    """
     ind = (industry or "").lower().strip()
-    inds = [i.lower() for i in (icp_industries or [])]
-    if ind and any(i == ind for i in inds):
+    if not ind:
+        return 0
+    inds = [i.lower().strip() for i in (icp_industries or []) if i]
+    if not inds:
+        return 0
+    if any(i == ind for i in inds):
         return 20
-    if ind and any(i and i in ind for i in inds):
+    if any(i and (i in ind or ind in i) for i in inds):
         return 10
     return 0
 

@@ -303,7 +303,10 @@ async def generate_leads_for_icp(user_id: str, icp_id: str, db: AsyncSession) ->
 
                 for person_data in people[:5]:
                     try:
-                        raw_name = person_data.get("name") or "Decision Maker"
+                        raw_name = (person_data.get("name") or "").strip()
+                        # Reject noise from heuristic extraction: need ≥3 chars, non-numeric.
+                        if not raw_name or len(raw_name) < 3 or raw_name.isdigit():
+                            continue
                         name_parts = raw_name.split(" ", 1)
                         first = name_parts[0] if name_parts else ""
                         last = name_parts[1] if len(name_parts) > 1 else ""
