@@ -469,6 +469,10 @@ async def generate_leads_for_icp(user_id: str, icp_id: str, db: AsyncSession) ->
                 counters["errors"] += 1
                 continue
 
+            # Commit after each company so leads appear in the UI progressively
+            # rather than only after the entire job finishes.
+            await db.commit()
+
     icp.total_leads_generated = (icp.total_leads_generated or 0) + counters["generated"]
     user.leads_used_this_month = (user.leads_used_this_month or 0) + counters["generated"]
     await db.flush()
@@ -477,7 +481,10 @@ async def generate_leads_for_icp(user_id: str, icp_id: str, db: AsyncSession) ->
 
 async def run_lead_generation_job(user_id: str, icp_id: str) -> None:
     """
-    Background-safe entrypoint that owns its own DB session and commit/rollback.
+    Background-safe entrypoint that owns its own DB session.
+
+    Commits after each company so results appear progressively in the UI
+    rather than only after the entire job finishes.
     """
     async with AsyncSessionLocal() as db:
         try:
