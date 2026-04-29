@@ -13,7 +13,14 @@ const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
 export type PlanTier = "free" | "starter" | "growth" | "pro" | "agency";
 export type LeadTier = "hot" | "warm" | "potential" | "cold";
-export type LeadStatus = "new" | "contacted" | "replied" | "meeting" | "closed" | "lost";
+export type LeadStatus =
+  | "new"
+  | "contacted"
+  | "replied"
+  | "meeting"
+  | "closed"
+  | "lost"
+  | "suppressed";
 export type LeadSource = "google_maps" | "google_search" | "website" | "linkedin" | "job_board" | "manual" | "landing_page";
 
 export interface User {
@@ -69,16 +76,18 @@ export interface Lead {
   lead_score:     number;
   lead_tier:      LeadTier;
   status:         LeadStatus;
-  source:         LeadSource;
+  source:         LeadSource | null;
   intent_signals: string[];
-  score_breakdown: Record<string, number>;
+  score_breakdown: Record<string, unknown>;
   ai_whatsapp_msg:  string | null;
   ai_email_subject: string | null;
   ai_email_body:    string | null;
+  ai_linkedin_note: string | null;
   outreach_sent:  boolean;
   notes:          string | null;
   follow_up_date: string | null;
   zims_lead_id:   string | null;
+  zims_pushed_at: string | null;
   created_at:     string;
   person: {
     id:              string;
@@ -100,6 +109,17 @@ export interface PaginatedLeads {
   page:     number;
   per_page: number;
   pages:    number;
+}
+
+export interface LeadStats {
+  hot: number;
+  warm: number;
+  potential: number;
+  cold: number;
+  total: number;
+  used_this_month: number;
+  limit: number;
+  limit_percentage: number;
 }
 
 // ── Base fetcher ──────────────────────────────────────────────
@@ -165,18 +185,21 @@ export const icpApi = {
 // ── Leads ─────────────────────────────────────────────────────
 
 export const leadsApi = {
+  stats: () => apiFetch<LeadStats>("/api/v1/leads/stats"),
+
   list: (params?: {
-    page?:      number;
-    per_page?:  number;
-    tier?:      LeadTier;
-    status?:    LeadStatus;
-    icp_id?:    string;
-    search?:    string;
+    page?:         number;
+    per_page?:     number;
+    tier?:         LeadTier;
+    status?:       LeadStatus;
+    icp_id?:       string;
+    search?:       string;
+    has_email?:    boolean;
+    zims_synced?:  boolean;
   }) => {
+    const entries = Object.entries(params ?? {}).filter(([, v]) => v !== undefined);
     const qs = new URLSearchParams(
-      Object.entries(params ?? {})
-        .filter(([, v]) => v !== undefined)
-        .map(([k, v]) => [k, String(v)])
+      entries.map(([k, v]) => [k, String(v)])
     ).toString();
     return apiFetch<PaginatedLeads>(`/api/v1/leads/?${qs}`);
   },
@@ -207,6 +230,11 @@ export const leadsApi = {
       `/api/v1/leads/${id}/push-to-zims`,
       { method: "POST" }
     ),
+
+  suppress: (id: string) =>
+    apiFetch<{ message: string }>(`/api/v1/leads/${id}/suppress`, {
+      method: "POST",
+    }),
 
   exportCSV: (filters?: Record<string, string>) =>
     apiFetch<{ download_url: string }>("/api/v1/leads/export/csv", {

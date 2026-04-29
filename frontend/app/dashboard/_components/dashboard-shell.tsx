@@ -17,13 +17,13 @@ import {
 } from "lucide-react";
 
 const navItems = [
-  { href: "/dashboard",           label: "Dashboard",      icon: LayoutDashboard },
-  { href: "/dashboard/leads",     label: "Leads",          icon: Users },
-  { href: "/dashboard/icp",       label: "ICP Builder",    icon: Target },
-  { href: "/dashboard/content",   label: "Content",        icon: FileText },
-  { href: "/dashboard/broadcasts",label: "Broadcasts",     icon: Megaphone },
-  { href: "/dashboard/pages",     label: "Landing Pages",  icon: Globe },
-  { href: "/dashboard/settings",  label: "Settings",       icon: Settings },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard/leads", label: "Leads", icon: Users },
+  { href: "/dashboard/icp", label: "ICP Builder", icon: Target },
+  { href: "/dashboard/content", label: "Content", icon: FileText },
+  { href: "/dashboard/broadcasts", label: "Broadcasts", icon: Megaphone },
+  { href: "/dashboard/pages", label: "Landing Pages", icon: Globe },
+  { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
 interface Props {
@@ -46,22 +46,33 @@ export function DashboardShell({ user, children }: Props) {
 
   const activeLabel =
     navItems.find((n) =>
-      n.href === "/dashboard"
-        ? pathname === "/dashboard"
-        : pathname.startsWith(n.href)
+      n.href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(n.href)
     )?.label ?? "Dashboard";
 
   return (
-    <div className="flex h-screen bg-[#080f1a] text-white overflow-hidden">
-      <aside className="w-60 flex-shrink-0 bg-[#0F1B2D] border-r border-white/8 flex flex-col">
-        <div className="h-16 flex items-center px-5 border-b border-white/8">
+    <div className="flex h-screen overflow-hidden bg-[color:var(--bg-primary)] text-[color:var(--text-primary)]">
+      <aside
+        className={cn(
+          "w-60 flex-shrink-0 flex flex-col border-r backdrop-blur-xl",
+          "border-[color:var(--border-color)] bg-[color:var(--sidebar-bg)]"
+        )}
+      >
+        <div className="h-16 flex items-center px-5 border-b border-[color:var(--border-color)]">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-[#3B6FFF] flex items-center justify-center flex-shrink-0">
+            <div
+              className={cn(
+                "w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0",
+                "bg-gradient-to-br from-indigo-500 via-violet-500 to-fuchsia-500 shadow-md",
+                "shadow-[0_0_20px_rgba(99,102,241,0.35)]"
+              )}
+            >
               <Zap className="w-4 h-4 text-white" />
             </div>
             <div>
-              <p className="text-white font-bold text-sm leading-none">Zentro Leads</p>
-              <p className="text-slate-500 text-[10px] mt-0.5">AI Lead Generation</p>
+              <p className="text-[color:var(--text-primary)] font-bold text-sm leading-none">
+                Zentro Leads
+              </p>
+              <p className="text-[color:var(--text-muted)] text-[10px] mt-0.5">AI Lead Generation</p>
             </div>
           </div>
         </div>
@@ -69,18 +80,16 @@ export function DashboardShell({ user, children }: Props) {
         <nav className="flex-1 py-4 px-3 space-y-0.5 overflow-y-auto">
           {navItems.map(({ href, label, icon: Icon }) => {
             const active =
-              href === "/dashboard"
-                ? pathname === "/dashboard"
-                : pathname.startsWith(href);
+              href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(href);
             return (
               <Link
                 key={href}
                 href={href}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                  "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200",
                   active
-                    ? "bg-[#3B6FFF]/15 text-[#3B6FFF]"
-                    : "text-slate-400 hover:text-white hover:bg-white/5"
+                    ? "bg-[color:var(--accent-soft)] text-[color:var(--accent)] shadow-[0_0_20px_rgba(99,102,241,0.12)] border border-[color:var(--border-color)]"
+                    : "text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--accent-soft)]/50"
                 )}
               >
                 <Icon className="w-4 h-4 flex-shrink-0" />
@@ -90,21 +99,31 @@ export function DashboardShell({ user, children }: Props) {
           })}
         </nav>
 
-        <div className="border-t border-white/8 p-3">
+        <div className="border-t border-[color:var(--border-color)] p-3">
           <div className="flex items-center gap-3 px-2 py-2">
-            <div className="w-8 h-8 rounded-full bg-[#3B6FFF]/20 flex items-center justify-center flex-shrink-0">
-              <span className="text-[#3B6FFF] text-xs font-bold uppercase">
+            <div
+              className={cn(
+                "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
+                "bg-[color:var(--accent-soft)] ring-1 ring-[color:var(--border-color)]"
+              )}
+            >
+              <span className="text-[color:var(--accent)] text-xs font-bold uppercase">
                 {user.full_name?.[0] ?? "U"}
               </span>
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-white text-xs font-medium truncate">{user.full_name}</p>
-              <p className="text-slate-500 text-[10px] truncate capitalize">{user.plan} plan</p>
+              <p className="text-[color:var(--text-primary)] text-xs font-medium truncate">
+                {user.full_name}
+              </p>
+              <p className="text-[color:var(--text-muted)] text-[10px] truncate capitalize">
+                {user.plan} plan
+              </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={handleLogout}
-            className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 text-sm transition-colors mt-1"
+            className="flex items-center gap-2 w-full px-3 py-2 rounded-xl text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--accent-soft)]/40 text-sm transition-colors mt-1"
           >
             <LogOut className="w-4 h-4" />
             Sign out
@@ -113,10 +132,17 @@ export function DashboardShell({ user, children }: Props) {
       </aside>
 
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="h-16 flex items-center px-6 border-b border-white/8 bg-[#0a1628] flex-shrink-0">
-          <h1 className="text-white font-semibold text-base">{activeLabel}</h1>
+        <header
+          className={cn(
+            "h-14 flex items-center px-6 border-b flex-shrink-0 backdrop-blur-xl",
+            "border-[color:var(--border-color)] bg-[color:var(--header-bg)]"
+          )}
+        >
+          <h1 className="text-[color:var(--text-primary)] font-semibold text-base tracking-tight">
+            {activeLabel}
+          </h1>
         </header>
-        <div className="flex-1 overflow-y-auto p-6">{children}</div>
+        <div className="flex-1 overflow-y-auto p-6 bg-[color:var(--bg-primary)]">{children}</div>
       </main>
     </div>
   );

@@ -4,18 +4,18 @@ import { Users, Flame, TrendingUp, Zap, ArrowRight, Target } from "lucide-react"
 
 export default async function DashboardPage() {
   let user = null;
-  let leads = null;
+  let leadStats = null;
 
   try {
     user = await authApi.me();
-    leads = await leadsApi.list({ per_page: 1 });
+    leadStats = await leadsApi.stats();
   } catch {
-    // Not authenticated — middleware will redirect
+    // Not authenticated — layout redirects to login
   }
 
   const leadsUsed = user?.leads_used_this_month ?? 0;
   const leadsLimit = user?.leads_limit ?? 25;
-  const usedPct = Math.round((leadsUsed / leadsLimit) * 100);
+  const usedPct = Math.round((leadsUsed / Math.max(leadsLimit, 1)) * 100);
 
   const stats = [
     {
@@ -23,127 +23,133 @@ export default async function DashboardPage() {
       value: leadsUsed,
       sub: `of ${leadsLimit} limit`,
       icon: Users,
-      color: "text-[#3B6FFF]",
-      bg: "bg-[#3B6FFF]/10",
+      tone: "from-indigo-400/90 to-violet-500/90",
     },
     {
       label: "Hot Leads",
-      value: "—",
+      value: leadStats?.hot ?? "—",
       sub: "score ≥ 85",
       icon: Flame,
-      color: "text-orange-400",
-      bg: "bg-orange-400/10",
+      tone: "from-orange-400/90 to-rose-500/90",
     },
     {
       label: "Warm Leads",
-      value: "—",
+      value: leadStats?.warm ?? "—",
       sub: "score 60–84",
       icon: TrendingUp,
-      color: "text-yellow-400",
-      bg: "bg-yellow-400/10",
+      tone: "from-amber-300/90 to-yellow-500/90",
     },
   ];
 
   return (
-    <div className="space-y-6">
-      {/* Welcome */}
-      <div>
-        <h2 className="text-white text-xl font-semibold">
-          Welcome back{user ? `, ${user.full_name.split(" ")[0]}` : ""}!
+    <div className="space-y-8 animate-fade-up">
+      <div className="relative overflow-hidden rounded-2xl border border-[color:var(--border-color)] bg-[color:var(--card-bg)] p-6 shadow-[var(--shadow-md)] backdrop-blur-xl md:p-8">
+        <div
+          className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full blur-3xl"
+          style={{
+            background: "radial-gradient(circle, rgba(99,102,241,0.2) 0%, transparent 70%)",
+          }}
+        />
+        <h2 className="text-2xl font-bold tracking-tight text-[color:var(--text-primary)]">
+          Welcome back{user ? `, ${user.full_name.split(" ")[0]}` : ""}
         </h2>
-        <p className="text-slate-400 text-sm mt-1">
+        <p className="mt-2 text-sm text-[color:var(--text-secondary)]">
           Here&apos;s what&apos;s happening with your leads today.
         </p>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {stats.map(({ label, value, sub, icon: Icon, color, bg }) => (
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        {stats.map(({ label, value, sub, icon: Icon, tone }, i) => (
           <div
             key={label}
-            className="bg-[#0F1B2D] border border-white/8 rounded-xl p-5"
+            className="gradient-border-wrap glow-hover animate-fade-up"
+            style={{ animationDelay: `${i * 70}ms` }}
           >
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-slate-400 text-xs font-medium uppercase tracking-wide mb-2">
-                  {label}
-                </p>
-                <p className="text-white text-3xl font-bold">{value}</p>
-                <p className="text-slate-500 text-xs mt-1">{sub}</p>
-              </div>
-              <div className={`${bg} p-2.5 rounded-lg`}>
-                <Icon className={`w-5 h-5 ${color}`} />
+            <div className="gradient-border-inner glass-panel rounded-2xl p-5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-[color:var(--text-muted)] mb-2">
+                    {label}
+                  </p>
+                  <p className="text-3xl font-bold text-[color:var(--text-primary)]">{value}</p>
+                  <p className="text-xs mt-1 text-[color:var(--text-muted)]">{sub}</p>
+                </div>
+                <div
+                  className={`rounded-xl bg-gradient-to-br p-2.5 ring-1 ring-[color:var(--border-color)] ${tone}`}
+                >
+                  <Icon className="h-5 w-5 text-white drop-shadow-sm" />
+                </div>
               </div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Usage bar */}
-      <div className="bg-[#0F1B2D] border border-white/8 rounded-xl p-5">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-white text-sm font-medium">Lead Quota</p>
-          <span className="text-slate-400 text-xs">
-            {leadsUsed} / {leadsLimit} used
-          </span>
+      <div className="gradient-border-wrap glow-hover">
+        <div className="gradient-border-inner glass-panel rounded-2xl p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-sm font-semibold text-[color:var(--text-primary)]">Lead quota</p>
+            <span className="text-xs tabular-nums text-[color:var(--text-secondary)]">
+              {leadsUsed} / {leadsLimit} used
+            </span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-[color:var(--border-color)]/70">
+            <div
+              className="h-full origin-left rounded-full bg-[image:var(--accent-gradient)] transition-transform duration-700 ease-out"
+              style={{ transform: `scaleX(${usedPct / 100})` }}
+            />
+          </div>
+          <p className="mt-2 text-xs text-[color:var(--text-muted)]">
+            {user?.plan === "free"
+              ? "Upgrade to get more leads per month"
+              : `${user?.plan} plan`}
+          </p>
         </div>
-        <div className="h-2 bg-white/8 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-[#3B6FFF] rounded-full transition-all"
-            style={{ width: `${usedPct}%` }}
-          />
-        </div>
-        <p className="text-slate-500 text-xs mt-2">
-          {user?.plan === "free"
-            ? "Upgrade to get more leads per month"
-            : `${user?.plan} plan`}
-        </p>
       </div>
 
-      {/* Quick actions */}
       <div>
-        <h3 className="text-white text-sm font-semibold mb-3">Quick Actions</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <h3 className="mb-3 text-lg font-semibold text-[color:var(--text-primary)]">Quick actions</h3>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <Link
             href="/dashboard/leads"
-            className="flex items-center gap-3 p-4 bg-[#0F1B2D] border border-white/8 rounded-xl hover:border-[#3B6FFF]/40 hover:bg-[#3B6FFF]/5 transition-all group"
+            className="group flex items-center gap-3 rounded-2xl border border-[color:var(--border-color)] bg-[color:var(--card-bg)] p-4 backdrop-blur-xl transition-all hover:border-[color:var(--accent)]/40 hover:shadow-[var(--shadow-glow)]"
           >
-            <div className="bg-[#3B6FFF]/10 p-2 rounded-lg">
-              <Zap className="w-4 h-4 text-[#3B6FFF]" />
+            <div className="rounded-xl bg-[color:var(--accent-soft)] p-2">
+              <Zap className="h-4 w-4 text-[color:var(--accent)]" />
             </div>
             <div className="flex-1">
-              <p className="text-white text-sm font-medium">Generate Leads</p>
-              <p className="text-slate-500 text-xs">AI-powered search</p>
+              <p className="text-sm font-medium text-[color:var(--text-primary)]">Generate Leads</p>
+              <p className="text-xs text-[color:var(--text-muted)]">AI-powered search</p>
             </div>
-            <ArrowRight className="w-4 h-4 text-slate-600 group-hover:text-[#3B6FFF] transition-colors" />
+            <ArrowRight className="h-4 w-4 text-[color:var(--text-muted)] transition group-hover:text-[color:var(--accent)]" />
           </Link>
 
           <Link
             href="/dashboard/icp"
-            className="flex items-center gap-3 p-4 bg-[#0F1B2D] border border-white/8 rounded-xl hover:border-[#3B6FFF]/40 hover:bg-[#3B6FFF]/5 transition-all group"
+            className="group flex items-center gap-3 rounded-2xl border border-[color:var(--border-color)] bg-[color:var(--card-bg)] p-4 backdrop-blur-xl transition-all hover:border-[color:var(--accent)]/40 hover:shadow-[var(--shadow-glow)]"
           >
-            <div className="bg-purple-500/10 p-2 rounded-lg">
-              <Target className="w-4 h-4 text-purple-400" />
+            <div className="rounded-xl bg-purple-500/10 p-2">
+              <Target className="h-4 w-4 text-purple-400" />
             </div>
             <div className="flex-1">
-              <p className="text-white text-sm font-medium">Create ICP</p>
-              <p className="text-slate-500 text-xs">Define your target</p>
+              <p className="text-sm font-medium text-[color:var(--text-primary)]">Create ICP</p>
+              <p className="text-xs text-[color:var(--text-muted)]">Define your target</p>
             </div>
-            <ArrowRight className="w-4 h-4 text-slate-600 group-hover:text-[#3B6FFF] transition-colors" />
+            <ArrowRight className="h-4 w-4 text-[color:var(--text-muted)] transition group-hover:text-[color:var(--accent)]" />
           </Link>
 
           <Link
             href="/dashboard/leads"
-            className="flex items-center gap-3 p-4 bg-[#0F1B2D] border border-white/8 rounded-xl hover:border-[#3B6FFF]/40 hover:bg-[#3B6FFF]/5 transition-all group"
+            className="group flex items-center gap-3 rounded-2xl border border-[color:var(--border-color)] bg-[color:var(--card-bg)] p-4 backdrop-blur-xl transition-all hover:border-[color:var(--accent)]/40 hover:shadow-[var(--shadow-glow)]"
           >
-            <div className="bg-green-500/10 p-2 rounded-lg">
-              <Users className="w-4 h-4 text-green-400" />
+            <div className="rounded-xl bg-emerald-500/10 p-2">
+              <Users className="h-4 w-4 text-emerald-400" />
             </div>
             <div className="flex-1">
-              <p className="text-white text-sm font-medium">View All Leads</p>
-              <p className="text-slate-500 text-xs">Manage pipeline</p>
+              <p className="text-sm font-medium text-[color:var(--text-primary)]">View All Leads</p>
+              <p className="text-xs text-[color:var(--text-muted)]">Manage pipeline</p>
             </div>
-            <ArrowRight className="w-4 h-4 text-slate-600 group-hover:text-[#3B6FFF] transition-colors" />
+            <ArrowRight className="h-4 w-4 text-[color:var(--text-muted)] transition group-hover:text-[color:var(--accent)]" />
           </Link>
         </div>
       </div>

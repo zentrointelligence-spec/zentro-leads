@@ -12,6 +12,7 @@ from app.config import settings
 from app.database import engine, Base
 from app.auth.routes import router as auth_router
 from app.icp.routes import router as icp_router
+from app.leads.routes import router as leads_router
 
 
 # ── Lifespan ─────────────────────────────────────────────────
@@ -50,6 +51,7 @@ app.add_middleware(
 # ── Routers ──────────────────────────────────────────────────
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(icp_router,  prefix="/api/v1/icp",  tags=["icp"])
+app.include_router(leads_router, prefix="/api/v1/leads", tags=["leads"])
 
 
 # ── Health Check ─────────────────────────────────────────────

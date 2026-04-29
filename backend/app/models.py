@@ -443,7 +443,7 @@ class ZLSuppressionList(Base):
     __tablename__ = "zl_suppression_list"
 
     id          = Column(String, primary_key=True, default=gen_id)
-    user_id     = Column(String, ForeignKey("zl_users.id"), index=True)
+    user_id     = Column(String, ForeignKey("zl_users.id"), index=True, nullable=True)
     # user_id=NULL means global suppression
     value       = Column(String, nullable=False, index=True)
     # Can be email or domain

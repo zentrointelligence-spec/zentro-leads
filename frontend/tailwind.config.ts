@@ -1,6 +1,7 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
+  darkMode: "class",
   content: [
     "./app/**/*.{ts,tsx}",
     "./components/**/*.{ts,tsx}",
@@ -16,6 +17,9 @@ const config: Config = {
           "blue-light": "#EEF3FF",
           slate: "#64748B",
         },
+        /** Flat aliases for `bg-brand-blue`, `text-brand-blue`, etc. */
+        "brand-blue": "#3B6FFF",
+        "brand-blue-dark": "#2855D8",
       },
       fontFamily: {
         sans: ["var(--font-geist-sans)", "system-ui", "sans-serif"],
