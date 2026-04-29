@@ -131,15 +131,24 @@ async function apiFetch<T>(
   const cookieStore = await cookies();
   const session = cookieStore.get("zentro_session")?.value;
 
-  const res = await fetch(`${BASE}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(session ? { Cookie: `zentro_session=${session}` } : {}),
-      ...(options.headers ?? {}),
-    },
-    cache: "no-store",
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(session ? { Cookie: `zentro_session=${session}` } : {}),
+        ...(options.headers ?? {}),
+      },
+      cache: "no-store",
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: "Unknown error" }));

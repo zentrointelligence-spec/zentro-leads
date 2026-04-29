@@ -6,6 +6,7 @@ Never raises; returns empty structure on any failure.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import random
 import re
 from typing import Any
@@ -53,6 +54,28 @@ TEAM_PATHS = [
 ]
 
 EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+
+# Social / aggregator platforms that should never be scraped as company sites.
+_SKIP_BASE_DOMAINS: frozenset[str] = frozenset({
+    "facebook.com",
+    "fb.com",
+    "linkedin.com",
+    "lnkd.in",
+    "instagram.com",
+    "twitter.com",
+    "x.com",
+    "tiktok.com",
+    "youtube.com",
+    "pinterest.com",
+    "wa.me",
+    "whatsapp.com",
+    "t.me",
+    "telegram.me",
+    "threads.net",
+    "snapchat.com",
+    "linktr.ee",
+    "beacons.ai",
+})
 PHONE_MY = re.compile(r"\+60[\s\-]?\d{1,2}[\s\-]?\d{3,4}[\s\-]?\d{3,4}")
 PHONE_UAE = re.compile(r"\+971[\s\-]?\d[\s\-]?\d{3}[\s\-]?\d{4}")
 PHONE_GENERAL = re.compile(r"[\+]?[(]?\d{1,4}[)]?[-\s\.]?\d{6,12}")
@@ -187,10 +210,24 @@ async def scrape_company_website(url: str) -> dict[str, Any]:
 
     Returns ``{"people": [], "emails": [], "phones": [], "social": {}}``.
     NEVER raises — returns empty dict on any failure.
+
+    Runs the Playwright browser in a thread-pool executor so heavy I/O does
+    not block the uvicorn event loop and starve other API requests.
+    Silently skips social media / link-aggregator URLs.
     """
     base = _normalize_url(url)
     if not base:
         return {}
+
+    # Guard: never scrape social media platforms masquerading as company websites.
+    try:
+        host = urlparse(base).netloc.lower().lstrip("www.")
+        base_domain = ".".join(host.split(".")[-2:]) if "." in host else host
+        if base_domain in _SKIP_BASE_DOMAINS:
+            logger.debug(f"Skipping social/aggregator URL: {url}")
+            return {}
+    except Exception:
+        pass
 
     try:
         ua_str = UserAgent().random
@@ -205,14 +242,40 @@ async def scrape_company_website(url: str) -> dict[str, Any]:
     social: dict[str, str] = {}
 
     try:
+        # Run in a thread pool so Playwright doesn't block the uvicorn event loop.
+        loop = asyncio.get_event_loop()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            result = await loop.run_in_executor(pool, _scrape_sync, base, ua_str)
+        return result
+    except Exception as exc:
+        logger.warning(f"Website scrape failed for {url}: {exc}")
+        return {}
+
+
+def _scrape_sync(base: str, ua_str: str) -> dict[str, Any]:
+    """Synchronous Playwright scrape — called from a thread pool executor."""
+    import asyncio as _asyncio
+    return _asyncio.run(_scrape_async(base, ua_str))
+
+
+async def _scrape_async(base: str, ua_str: str) -> dict[str, Any]:
+    """Inner async Playwright logic running in its own event loop (thread)."""
+    from app.config import settings as _settings
+
+    people: list[dict[str, str]] = []
+    emails: list[str] = []
+    phones: list[str] = []
+    social: dict[str, str] = {}
+
+    try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             context_kwargs: dict[str, Any] = {
                 "user_agent": ua_str,
                 "viewport": {"width": 1280, "height": 720},
             }
-            if settings.ROTATING_PROXY_URL:
-                context_kwargs["proxy"] = {"server": settings.ROTATING_PROXY_URL}
+            if _settings.ROTATING_PROXY_URL:
+                context_kwargs["proxy"] = {"server": _settings.ROTATING_PROXY_URL}
             context = await browser.new_context(**context_kwargs)
             page = await context.new_page()
 
@@ -278,5 +341,5 @@ async def scrape_company_website(url: str) -> dict[str, Any]:
 
         return {"people": people, "emails": emails, "phones": phones, "social": social}
     except Exception as exc:
-        logger.warning(f"Website scrape failed for {url}: {exc}")
+        logger.warning(f"Website scrape failed for {base}: {exc}")
         return {}
