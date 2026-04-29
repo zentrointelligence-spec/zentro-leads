@@ -261,10 +261,18 @@ async def generate_leads_for_icp(user_id: str, icp_id: str, db: AsyncSession) ->
     if not queries:
         if icp.industries and icp.locations:
             queries = [f"{icp.industries[0]} {icp.locations[0]}"]
+            logger.info(f"ICP {icp_id}: no search_queries set — derived query from industries+locations: {queries}")
         else:
             queries = [icp.name]
+            logger.warning(
+                f"ICP {icp_id} ('{icp.name}') has no search_queries, industries, or locations. "
+                f"Falling back to ICP name as search query. "
+                f"Use POST /api/v1/icp/build to generate a properly populated ICP, "
+                f"or PATCH the ICP to add search_queries/industries/locations before generating."
+            )
 
     location = icp.locations[0] if icp.locations else ""
+    logger.info(f"ICP {icp_id}: running {len(queries)} query/queries, location={location!r}, queries={queries}")
 
     for query in queries:
         try:

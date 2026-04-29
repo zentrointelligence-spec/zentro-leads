@@ -151,6 +151,7 @@ async def scrape_google_maps(
 
     async with httpx.AsyncClient() as client:
         search_query = f"{query} {location}".strip()
+        logger.info(f"Google Maps Text Search: query={search_query!r} max_results={max_results}")
         params: dict[str, Any] = {
             "query": search_query,
             "key": settings.GOOGLE_MAPS_API_KEY,
@@ -166,7 +167,14 @@ async def scrape_google_maps(
 
             data = await _http_get_json(client, TEXT_SEARCH_URL, params)
             status = data.get("status")
-            if status not in ("OK", "ZERO_RESULTS"):
+            logger.info(
+                f"Google Maps API response: status={status} results={len(data.get('results', []))} "
+                f"query={search_query!r}"
+            )
+            if status == "ZERO_RESULTS":
+                logger.warning(f"Google Maps returned ZERO_RESULTS for query={search_query!r} — check ICP search_queries/location")
+                break
+            if status != "OK":
                 logger.error(f"Google Text Search API error: status={status} body={data}")
                 break
 
