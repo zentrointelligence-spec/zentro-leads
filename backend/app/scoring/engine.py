@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import anthropic
+from anthropic import AsyncAnthropic
 from loguru import logger
 
 from app.config import settings
@@ -204,7 +204,7 @@ async def generate_ai_outreach(
             "linkedin_note": f"Hi {first}, would love to connect.",
         }
 
-    client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
     prompt = f"""You are an expert sales copywriter for B2B outreach.
 
 Seller context: {icp_description}
@@ -227,8 +227,8 @@ Return ONLY valid JSON (no markdown, no explanation):
   "linkedin_note": "<max 150 chars, connection request>"
 }}"""
 
-    message = client.messages.create(
-        model="claude-sonnet-4-20250514",
+    message = await client.messages.create(
+        model="claude-sonnet-4-5",
         max_tokens=512,
         messages=[{"role": "user", "content": prompt}],
     )

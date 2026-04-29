@@ -6,7 +6,7 @@ import json
 import math
 from typing import Any, Optional
 
-import anthropic
+from anthropic import AsyncAnthropic
 from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Query, status
 from loguru import logger
 from sqlalchemy import func, or_, select
@@ -419,9 +419,9 @@ Use tier values: hot, warm, potential, cold or null.
 Use status values: new, contacted, replied, meeting, closed, lost, suppressed or null.
 signals may include hiring, funded, expanding, job_change, in_the_news, new_product."""
 
-    client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-    message = client.messages.create(
-        model="claude-sonnet-4-20250514",
+    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    message = await client.messages.create(
+        model="claude-sonnet-4-5",
         max_tokens=256,
         messages=[{"role": "user", "content": prompt}],
     )

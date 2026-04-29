@@ -4,6 +4,7 @@ import hashlib
 import json
 
 import anthropic
+from anthropic import AsyncAnthropic, APIError
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi import Cookie
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,29 +48,50 @@ def _icp_cache_key(user_id: str, description: str) -> str:
 
 
 async def _call_claude(description: str) -> dict:
+    """Call Claude asynchronously to build ICP JSON from a business description."""
     if not settings.ANTHROPIC_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="ANTHROPIC_API_KEY is not configured. Set it in backend/.env to use AI ICP building.",
         )
-    client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-    message = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=1024,
-        messages=[
-            {
-                "role": "user",
-                "content": CLAUDE_ICP_PROMPT.format(description=description),
-            }
-        ],
-    )
+    try:
+        client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+        message = await client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=1024,
+            messages=[
+                {
+                    "role": "user",
+                    "content": CLAUDE_ICP_PROMPT.format(description=description),
+                }
+            ],
+        )
+    except APIError as exc:
+        logger.error(f"Anthropic API error during ICP build: {exc.status_code} {exc.message}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"AI service error: {exc.message}",
+        )
+    except Exception as exc:
+        logger.error(f"Unexpected error calling Claude: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="AI service temporarily unavailable. Please try again.",
+        )
+
     raw = message.content[0].text.strip()
-    # Strip markdown fences if Claude adds them anyway
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
             raw = raw[4:]
-    return json.loads(raw)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        logger.error(f"Claude returned non-JSON ICP response: {exc} raw={raw[:300]!r}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="AI returned an unexpected format. Please try again.",
+        )
 
 
 # ── POST /api/v1/icp/build ────────────────────────────────────
