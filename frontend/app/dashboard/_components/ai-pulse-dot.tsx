@@ -10,7 +10,7 @@ export function AiPulseDot({ className }: { className?: string }) {
     <span
       className={cn(
         "relative inline-flex h-2.5 w-2.5 rounded-full",
-        "bg-gradient-to-br from-cyan-400 to-violet-500 ai-pulse-dot",
+        "bg-gradient-to-br from-primary to-accent ai-pulse-dot",
         "ring-2 ring-[color:var(--card-bg-solid)] dark:ring-[color:var(--bg-primary)]",
         className
       )}

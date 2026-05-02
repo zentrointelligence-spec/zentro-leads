@@ -54,6 +54,86 @@ TEAM_PATHS = [
 ]
 
 EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+_NAME_CONNECTORS = frozenset({
+    "al", "ap", "bin", "binti", "da", "de", "del", "der", "di", "ibn",
+    "la", "le", "md", "mohd", "van", "von",
+})
+_NAME_TOKEN_BLOCKLIST = frozenset({
+    "about",
+    "advisory",
+    "advisor",
+    "announcement",
+    "announcements",
+    "app",
+    "article",
+    "articles",
+    "campaign",
+    "campaigns",
+    "care",
+    "career",
+    "careers",
+    "charter",
+    "claim",
+    "claims",
+    "component",
+    "consent",
+    "contact",
+    "content",
+    "cookie",
+    "cookies",
+    "customer",
+    "doctor",
+    "event",
+    "events",
+    "faq",
+    "financial",
+    "find",
+    "football",
+    "foreign",
+    "form",
+    "glossary",
+    "guide",
+    "help",
+    "human",
+    "important",
+    "introducing",
+    "investment",
+    "key",
+    "library",
+    "locate",
+    "menu",
+    "news",
+    "office",
+    "overview",
+    "page",
+    "partnership",
+    "partnerships",
+    "payment",
+    "personnel",
+    "preference",
+    "preferences",
+    "premium",
+    "privacy",
+    "product",
+    "products",
+    "promotion",
+    "promotions",
+    "public",
+    "read",
+    "record",
+    "recordkeeping",
+    "registration",
+    "renew",
+    "resource",
+    "resources",
+    "running",
+    "specialist",
+    "success",
+    "support",
+    "technical",
+    "terms",
+    "wellness",
+})
 
 # Social / aggregator platforms that should never be scraped as company sites.
 _SKIP_BASE_DOMAINS: frozenset[str] = frozenset({
@@ -81,13 +161,26 @@ PHONE_UAE = re.compile(r"\+971[\s\-]?\d[\s\-]?\d{3}[\s\-]?\d{4}")
 PHONE_GENERAL = re.compile(r"[\+]?[(]?\d{1,4}[)]?[-\s\.]?\d{6,12}")
 
 
+_SKIP_DOMAINS = frozenset({
+    "facebook.com", "instagram.com", "twitter.com", "x.com",
+    "linkedin.com", "youtube.com", "tiktok.com", "wa.link",
+    "bit.ly", "linktr.ee", "t.me",
+})
+
+
 def _normalize_url(url: str) -> str | None:
-    """Return absolute http(s) URL or None."""
+    """Return absolute http(s) URL or None. Skips social/redirect domains."""
     if not url or not isinstance(url, str):
         return None
     u = url.strip()
     if not u.startswith(("http://", "https://")):
         return None
+    try:
+        host = urlparse(u).netloc.lower().lstrip("www.")
+        if any(host == d or host.endswith("." + d) for d in _SKIP_DOMAINS):
+            return None
+    except Exception:
+        pass
     return u
 
 
@@ -152,6 +245,42 @@ def _extract_social(soup: BeautifulSoup) -> dict[str, str]:
     return social
 
 
+def _normalize_person_text(value: str) -> str:
+    text = (value or "").replace("\u200b", " ").replace("\xa0", " ")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _looks_like_real_name(name: str) -> bool:
+    cleaned = _normalize_person_text(name)
+    if not cleaned or len(cleaned) > 60:
+        return False
+    if any(ch.isdigit() for ch in cleaned):
+        return False
+    if any(ch in cleaned for ch in "@/|\\"):
+        return False
+    words = cleaned.split()
+    if len(words) < 2 or len(words) > 5:
+        return False
+
+    human_tokens = 0
+    for raw_word in words:
+        word = raw_word.strip(".,:;()[]{}\"'")
+        lower = word.lower()
+        if not word:
+            return False
+        if lower in _NAME_TOKEN_BLOCKLIST:
+            return False
+        if lower in _NAME_CONNECTORS:
+            continue
+        if not re.fullmatch(r"[A-Za-z][A-Za-z'\\-]{0,24}", word):
+            return False
+        if not word[0].isupper():
+            return False
+        human_tokens += 1
+
+    return human_tokens >= 2
+
+
 def _infer_seniority(title: str) -> str:
     """Map a title string to coarse seniority bucket."""
     t = (title or "").lower()
@@ -193,11 +322,14 @@ def _extract_people_from_soup(soup: BeautifulSoup) -> list[dict[str, str]]:
                     people.append({"name": name, "title": title})
                 break
 
-    # Dedupe by name lower
     seen: set[str] = set()
     uniq: list[dict[str, str]] = []
     for p in people:
-        key = p["name"].lower()
+        normalized_name = _normalize_person_text(p["name"])
+        if not _looks_like_real_name(normalized_name):
+            continue
+        p["name"] = normalized_name
+        key = normalized_name.lower()
         if key not in seen:
             seen.add(key)
             uniq.append(p)
@@ -240,12 +372,16 @@ async def scrape_company_website(url: str) -> dict[str, Any]:
     emails: list[str] = []
     phones: list[str] = []
     social: dict[str, str] = {}
+    raw_texts: list[str] = []
 
     try:
         # Run in a thread pool so Playwright doesn't block the uvicorn event loop.
         loop = asyncio.get_event_loop()
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            result = await loop.run_in_executor(pool, _scrape_sync, base, ua_str)
+            result = await asyncio.wait_for(
+                loop.run_in_executor(pool, _scrape_sync, base, ua_str),
+                timeout=35.0,
+            )
         return result
     except Exception as exc:
         logger.warning(f"Website scrape failed for {url}: {exc}")
@@ -266,6 +402,7 @@ async def _scrape_async(base: str, ua_str: str) -> dict[str, Any]:
     emails: list[str] = []
     phones: list[str] = []
     social: dict[str, str] = {}
+    raw_texts: list[str] = []
 
     try:
         async with async_playwright() as p:
@@ -285,7 +422,7 @@ async def _scrape_async(base: str, ua_str: str) -> dict[str, Any]:
                     return None
                 await asyncio.sleep(random.uniform(2.0, 4.0))
                 try:
-                    resp = await page.goto(full, wait_until="domcontentloaded", timeout=15000)
+                    resp = await page.goto(full, wait_until="domcontentloaded", timeout=8000)
                     if resp is None or resp.status >= 400:
                         return None
                     html = await page.content()
@@ -301,6 +438,7 @@ async def _scrape_async(base: str, ua_str: str) -> dict[str, Any]:
                     continue
                 found = _extract_people_from_soup(soup)
                 txt = soup.get_text("\n", strip=True)
+                raw_texts.append(txt)
                 emails.extend(_extract_emails(txt))
                 phones.extend(_extract_phones(txt))
                 social.update(_extract_social(soup))
@@ -314,6 +452,7 @@ async def _scrape_async(base: str, ua_str: str) -> dict[str, Any]:
                 if soup:
                     people.extend(_extract_people_from_soup(soup))
                     txt = soup.get_text("\n", strip=True)
+                    raw_texts.append(txt)
                     emails.extend(_extract_emails(txt))
                     phones.extend(_extract_phones(txt))
                     social.update(_extract_social(soup))
@@ -323,6 +462,7 @@ async def _scrape_async(base: str, ua_str: str) -> dict[str, Any]:
                 soup = await visit(cpath)
                 if soup:
                     txt = soup.get_text("\n", strip=True)
+                    raw_texts.append(txt)
                     emails.extend(_extract_emails(txt))
                     phones.extend(_extract_phones(txt))
                     social.update(_extract_social(soup))
@@ -339,7 +479,14 @@ async def _scrape_async(base: str, ua_str: str) -> dict[str, Any]:
             p.setdefault("title", "")
             _ = _infer_seniority(p.get("title", ""))
 
-        return {"people": people, "emails": emails, "phones": phones, "social": social}
+        full_raw = "\n".join(raw_texts)
+        return {
+            "people": people,
+            "emails": emails,
+            "phones": phones,
+            "social": social,
+            "raw_text": full_raw[:20000],  # Cap at 20K chars
+        }
     except Exception as exc:
         logger.warning(f"Website scrape failed for {base}: {exc}")
         return {}

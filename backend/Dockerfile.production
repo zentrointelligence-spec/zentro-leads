@@ -1,0 +1,47 @@
+# ═══════════════════════════════════════════════════════════════
+# LeadRadar Backend — Production Dockerfile
+# Python 3.12 slim on Debian Bookworm
+# ═══════════════════════════════════════════════════════════════
+
+FROM python:3.12-slim-bookworm
+
+# ── Security: create non-root user ────────────────────────────
+RUN groupadd -r appuser && \
+    useradd -r -g appuser appuser
+
+WORKDIR /app
+
+# ── System dependencies ───────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    curl \
+    wget \
+    gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Python dependencies ───────────────────────────────────────
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# ── Playwright Chromium (for scraper) ─────────────────────────
+RUN playwright install chromium && \
+    playwright install-deps chromium
+
+# ── Application code ──────────────────────────────────────────
+COPY . .
+
+# ── Permissions ───────────────────────────────────────────────
+RUN chown -R appuser:appuser /app
+USER appuser
+
+# ── Port ──────────────────────────────────────────────────────
+EXPOSE 8001
+
+# ── Production server ─────────────────────────────────────────
+# No --reload. 2 workers for moderate traffic.
+CMD ["uvicorn", "app.main:app", \
+     "--host", "0.0.0.0", \
+     "--port", "8001", \
+     "--workers", "2"]

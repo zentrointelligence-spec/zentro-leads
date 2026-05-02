@@ -12,6 +12,7 @@ export interface ParsedLeadsQuery {
   search?: string;
   has_email?: boolean;
   zims_synced?: boolean;
+  min_icp_match?: number;
   view: LeadsViewMode;
 }
 
@@ -32,7 +33,11 @@ export function parseLeadsQuery(
   const per_page = Math.min(100, Math.max(1, Number(g("per_page") || 20)));
   const he = g("has_email");
   const zm = g("zims");
+  const icpMin = g("icp_min");
   const view = g("view") === "table" ? "table" : "kanban";
+
+  // Default to 70% ICP match filter; "0" means show all
+  const min_icp_match = icpMin === "0" ? 0 : icpMin ? Number(icpMin) : 70;
 
   return {
     page,
@@ -42,6 +47,7 @@ export function parseLeadsQuery(
     search: g("search") || undefined,
     has_email: he === "true" ? true : he === "false" ? false : undefined,
     zims_synced: zm === "true" ? true : zm === "false" ? false : undefined,
+    min_icp_match,
     view,
   };
 }
@@ -61,5 +67,6 @@ export function stringifyLeadsQuery(q: ParsedLeadsQuery): string {
   if (q.has_email === false) p.set("has_email", "false");
   if (q.zims_synced === true) p.set("zims", "true");
   if (q.zims_synced === false) p.set("zims", "false");
+  if (q.min_icp_match !== undefined) p.set("icp_min", String(q.min_icp_match));
   return p.toString();
 }

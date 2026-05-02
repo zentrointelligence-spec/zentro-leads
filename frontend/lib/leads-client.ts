@@ -17,3 +17,16 @@ export async function patchLeadStatus(id: string, status: LeadStatus): Promise<L
   }
   return res.json() as Promise<Lead>;
 }
+
+export async function sendOutreach(id: string, channel: "whatsapp" | "email"): Promise<void> {
+  const res = await fetch(`/api/v1/analytics/leads/${id}/outreach`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ channel }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Request failed" }));
+    throw new Error(err.detail ?? `HTTP ${res.status}`);
+  }
+}

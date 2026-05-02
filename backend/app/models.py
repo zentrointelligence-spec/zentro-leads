@@ -32,10 +32,12 @@ class PlanTier(str, enum.Enum):
 
 class LeadStatus(str, enum.Enum):
     NEW        = "new"
+    VIEWED     = "viewed"
     CONTACTED  = "contacted"
     REPLIED    = "replied"
     MEETING    = "meeting"
     CLOSED     = "closed"
+    WON        = "won"
     LOST       = "lost"
     SUPPRESSED = "suppressed"
 
@@ -273,6 +275,10 @@ class ZLCompany(Base):
     google_rating  = Column(Float)
     google_reviews = Column(Integer)
 
+    # Malaysian business verification
+    ssm_verified     = Column(Boolean, default=False)
+    years_in_business = Column(String)
+
     # Data quality
     data_source      = Column(Enum(LeadSource))
     last_verified_at = Column(DateTime(timezone=True))
@@ -361,6 +367,12 @@ class ZLLead(Base):
     # Status pipeline
     status         = Column(Enum(LeadStatus), default=LeadStatus.NEW, index=True)
     source         = Column(Enum(LeadSource))
+
+    # ICP validation (Claude-enriched)
+    icp_match_score      = Column(Integer, default=0)
+    icp_verdict          = Column(String)
+    icp_reason           = Column(Text)
+    recommended_product  = Column(String)
 
     # AI-generated outreach
     ai_whatsapp_msg  = Column(Text)
@@ -461,18 +473,42 @@ class ZLSuppressionList(Base):
 # ═══════════════════════════════════════════════════════════════
 
 class ZLScoringFeedback(Base):
-    """Self-learning: records what actually converted for score re-weighting."""
+    """
+    Conversion event tracking + ML feedback.
+    Stores every stage of the lead funnel for analytics and model training.
+    """
     __tablename__ = "zl_scoring_feedback"
 
     id                  = Column(String, primary_key=True, default=gen_id)
     user_id             = Column(String, ForeignKey("zl_users.id"), index=True)
     lead_id             = Column(String, ForeignKey("zl_leads.id"), index=True)
-    original_score      = Column(Integer)
-    original_breakdown  = Column(JSON)
+    icp_id              = Column(String, ForeignKey("zl_icps.id"), nullable=True)
+
+    # Event tracking
+    event_type          = Column(String, nullable=False, index=True)
+    # lead_generated, lead_viewed, outreach_sent, reply_received, deal_closed
+
+    # Scoring context (populated for lead_generated events)
+    original_score      = Column(Integer, nullable=True)
+    original_breakdown  = Column(JSON, nullable=True)
+    intent_signals      = Column(JSON, nullable=True)
+
+    # Outreach tracking
+    channel             = Column(String, nullable=True)
+    # whatsapp, email, linkedin, sms
+
+    # Reply tracking
+    days_to_reply       = Column(Integer, nullable=True)
+
+    # Deal tracking
     converted           = Column(Boolean, default=False)
-    conversion_value    = Column(Float)
-    feedback_signal     = Column(String)
+    conversion_value    = Column(Float, nullable=True)
+    revenue_value       = Column(Float, nullable=True)
+
+    # Legacy / misc
+    feedback_signal     = Column(String, nullable=True)
     # "closed_in_zims", "manually_marked", "replied_to_outreach"
+
     recorded_at         = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -640,4 +676,43 @@ class ZLNotification(Base):
 
     __table_args__ = (
         Index("ix_zl_notifications_user_unread", "user_id", "is_read"),
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+# zl_auto_signals
+# ═══════════════════════════════════════════════════════════════
+
+class ZLAutoSignal(Base):
+    """
+    Auto-detected intent signals from monitors (tender, job board, SSM, renewal).
+    Powers the Live Signal Feed widget on the dashboard.
+    """
+    __tablename__ = "zl_auto_signals"
+
+    id              = Column(String, primary_key=True, default=gen_id)
+    user_id         = Column(String, ForeignKey("zl_users.id"), nullable=True, index=True)
+    company_id      = Column(String, ForeignKey("zl_companies.id"), nullable=True, index=True)
+    lead_id         = Column(String, ForeignKey("zl_leads.id"), nullable=True, index=True)
+
+    company_name    = Column(String, index=True)
+    signal_source   = Column(String, nullable=False, index=True)
+    # "tender_monitor", "job_board_monitor", "ssm_monitor", "renewal_monitor"
+    signal_type     = Column(String, nullable=False, index=True)
+    # "tender_win", "hiring_drivers", "new_registration", "renewal_due", ...
+    signal_detail   = Column(Text)
+    source_url      = Column(String)
+
+    why_now         = Column(Text)
+    insurance_need  = Column(String)
+    recommended_product = Column(String)
+    confidence      = Column(Float, default=0.8)
+
+    detected_at     = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    alerted_at      = Column(DateTime(timezone=True))
+    created_at      = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_zl_auto_signals_user_detected", "user_id", "detected_at"),
+        Index("ix_zl_auto_signals_company", "company_id", "signal_type"),
     )

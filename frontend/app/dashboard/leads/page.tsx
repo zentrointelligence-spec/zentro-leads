@@ -24,6 +24,7 @@ export default async function LeadsPage({
       status,
       has_email: q.has_email,
       zims_synced: q.zims_synced,
+      min_icp_match: q.min_icp_match && q.min_icp_match > 0 ? q.min_icp_match : undefined,
     }),
     leadsApi.stats(),
   ]);

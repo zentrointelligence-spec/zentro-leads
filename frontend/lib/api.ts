@@ -69,6 +69,13 @@ export interface Company {
   in_the_news:    boolean;
   funding_stage:  string | null;
   google_rating:  number | null;
+  ssm_verified:   boolean;
+  years_in_business: string | null;
+  revenue_estimate: string | null;
+  is_malaysian_company: boolean;
+  decision_maker_name: string | null;
+  decision_maker_title: string | null;
+  linkedin_url:   string | null;
 }
 
 export interface Lead {
@@ -88,6 +95,10 @@ export interface Lead {
   follow_up_date: string | null;
   zims_lead_id:   string | null;
   zims_pushed_at: string | null;
+  icp_match_score: number;
+  icp_verdict:    string | null;
+  icp_reason:     string | null;
+  recommended_product: string | null;
   created_at:     string;
   person: {
     id:              string;
@@ -185,6 +196,12 @@ export const icpApi = {
       body: JSON.stringify({ description }),
     }),
 
+  update: (id: string, body: Partial<ICP>) =>
+    apiFetch<ICP>(`/api/v1/icp/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
   delete: (id: string) =>
     apiFetch<{ message: string }>(`/api/v1/icp/${id}`, {
       method: "DELETE",
@@ -197,14 +214,15 @@ export const leadsApi = {
   stats: () => apiFetch<LeadStats>("/api/v1/leads/stats"),
 
   list: (params?: {
-    page?:         number;
-    per_page?:     number;
-    tier?:         LeadTier;
-    status?:       LeadStatus;
-    icp_id?:       string;
-    search?:       string;
-    has_email?:    boolean;
-    zims_synced?:  boolean;
+    page?:           number;
+    per_page?:       number;
+    tier?:           LeadTier;
+    status?:         LeadStatus;
+    icp_id?:         string;
+    search?:         string;
+    has_email?:      boolean;
+    zims_synced?:    boolean;
+    min_icp_match?:  number;
   }) => {
     const entries = Object.entries(params ?? {}).filter(([, v]) => v !== undefined);
     const qs = new URLSearchParams(
@@ -217,7 +235,7 @@ export const leadsApi = {
     apiFetch<Lead>(`/api/v1/leads/${id}`),
 
   generate: (icpId: string) =>
-    apiFetch<{ job_id: string; message: string }>("/api/v1/leads/generate", {
+    apiFetch<{ message: string; estimated_seconds?: number; icp_name?: string }>("/api/v1/leads/generate", {
       method: "POST",
       body: JSON.stringify({ icp_id: icpId }),
     }),

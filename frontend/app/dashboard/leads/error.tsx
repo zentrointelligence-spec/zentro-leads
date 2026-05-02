@@ -11,13 +11,17 @@ export default function LeadsError({
   reset: () => void;
 }) {
   return (
-    <div className="mx-auto max-w-lg rounded-lg border border-red-500/20 bg-red-500/[0.06] px-8 py-10 text-center">
-      <p className="text-[15px] font-semibold tracking-tight text-red-200/95">Could not load leads</p>
-      <p className="mt-2 break-words text-[13px] leading-relaxed text-red-200/70">{error.message}</p>
+    <div className="mx-auto max-w-lg rounded-lg border border-hot/20 bg-hot-light px-8 py-10 text-center">
+      <p className="text-[15px] font-semibold tracking-tight text-hot">
+        Could not load leads
+      </p>
+      <p className="mt-2 break-words text-[13px] leading-relaxed text-foreground-secondary">
+        {error.message}
+      </p>
       <button
         type="button"
         onClick={() => reset()}
-        className="mt-8 h-10 rounded-md bg-zinc-100 px-5 text-[13px] font-medium text-zinc-900 transition-colors hover:bg-white"
+        className="mt-8 h-10 rounded-md bg-primary px-5 text-[13px] font-medium text-white transition-colors hover:bg-primary-dark"
       >
         Try again
       </button>

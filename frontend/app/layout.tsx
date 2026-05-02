@@ -7,10 +7,11 @@ import { useState } from "react";
 
 import { AppToaster } from "./app-toaster";
 import { ThemeProvider } from "./providers/theme-provider";
+import { ParticleField } from "@/components/ui/particle-field";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-geist-sans" });
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
-const themeInitScript = `(function(){try{var k='zentro-theme',s=localStorage.getItem(k);if(s==='dark'||s==='light'){document.documentElement.classList.toggle('dark',s==='dark');document.documentElement.style.colorScheme=s==='dark'?'dark':'light';return;}if(window.matchMedia('(prefers-color-scheme: dark)').matches){document.documentElement.classList.add('dark');document.documentElement.style.colorScheme='dark';}else{document.documentElement.style.colorScheme='light';}}catch(e){}})();`;
+const themeInitScript = `(function(){try{var k='zentro-theme',s=localStorage.getItem(k);var t=s==='dark'||s==='light'?s:(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.classList.toggle('dark',t==='dark');document.documentElement.style.colorScheme=t==='dark'?'dark':'light';}catch(e){}})();`;
 
 export default function RootLayout({
   children,
@@ -29,7 +30,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <title>Zentro Leads — AI Lead Generation</title>
+        <title>LeadRadar — AI Lead Generation</title>
         <meta name="description" content="AI-powered B2B lead generation platform" />
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
@@ -38,6 +39,7 @@ export default function RootLayout({
       >
         <QueryClientProvider client={queryClient}>
           <ThemeProvider>
+            <ParticleField />
             {children}
             <AppToaster />
           </ThemeProvider>

@@ -92,7 +92,12 @@ def _industry_score(industry: str, icp_industries: list[str]) -> int:
     return 0
 
 
-def _signals_score(company: dict[str, Any], person: dict[str, Any], icp_signals: list[str]) -> tuple[int, list[str]]:
+def _signals_score(
+    company: dict[str, Any],
+    person: dict[str, Any],
+    icp_signals: list[str],
+    extra_signals: list[str] | None = None,
+) -> tuple[int, list[str]]:
     """Intent signals score (max 15) and detected signal list."""
     signals_present: list[str] = []
     if company.get("is_hiring"):
@@ -105,6 +110,11 @@ def _signals_score(company: dict[str, Any], person: dict[str, Any], icp_signals:
     if fs not in (None, "", []):
         signals_present.append("funded")
 
+    # Add extra signals (e.g. from company name keyword detection)
+    for s in (extra_signals or []):
+        if s and s not in signals_present:
+            signals_present.append(s)
+
     icp_s = [str(s).lower() for s in (icp_signals or [])]
     matched = [s for s in signals_present if str(s).lower() in icp_s]
     score = min(len(matched) * 5, 15)
@@ -113,14 +123,33 @@ def _signals_score(company: dict[str, Any], person: dict[str, Any], icp_signals:
 
 def _email_score(person: dict[str, Any]) -> int:
     """Email verification score (max 10)."""
-    if person.get("email_verified") and float(person.get("email_confidence") or 0.0) >= 0.9:
+    email = person.get("email") or ""
+    confidence = float(person.get("email_confidence") or 0.0)
+
+    # Verified high-confidence email
+    if person.get("email_verified") and confidence >= 0.9:
         return 10
-    if person.get("email") and float(person.get("email_confidence") or 0.0) >= 0.5:
+
+    # Pattern email with good confidence
+    if email and "@" in email:
+        if confidence >= 0.7:
+            return 10
+        elif confidence > 0:
+            return 5
+
+    # Fallback for any email present
+    if email and confidence >= 0.5:
         return 5
     return 0
 
 
-def calculate_lead_score(person: dict[str, Any], company: dict[str, Any], icp: dict[str, Any]) -> dict[str, Any]:
+def calculate_lead_score(
+    person: dict[str, Any],
+    company: dict[str, Any],
+    icp: dict[str, Any],
+    extra_signals: list[str] | None = None,
+    icp_match_score: int | None = None,
+) -> dict[str, Any]:
     """
     100-point scoring system. Returns ``{score, tier, breakdown}``.
 
@@ -130,6 +159,7 @@ def calculate_lead_score(person: dict[str, Any], company: dict[str, Any], icp: d
     - industry: max 20
     - intent signals: max 15
     - email: max 10
+    - icp match bonus: up to 25
     """
     size_score = _company_size_score(company.get("employee_range"), icp.get("company_sizes") or [])
     role_score = _role_score_fixed(
@@ -138,10 +168,24 @@ def calculate_lead_score(person: dict[str, Any], company: dict[str, Any], icp: d
         icp.get("seniority_levels") or [],
     )
     industry_score = _industry_score(company.get("industry") or "", icp.get("industries") or [])
-    signals_score, signals_present = _signals_score(company, person, icp.get("intent_signals") or [])
+    signals_score, signals_present = _signals_score(
+        company, person, icp.get("intent_signals") or [], extra_signals=extra_signals
+    )
     email_sc = _email_score(person)
 
     total = size_score + role_score + industry_score + signals_score + email_sc
+
+    # ICP match bonus
+    icp_bonus = 0
+    if icp_match_score is not None:
+        if icp_match_score >= 90:
+            icp_bonus = 25
+        elif icp_match_score >= 75:
+            icp_bonus = 15
+        elif icp_match_score >= 60:
+            icp_bonus = 10
+    total += icp_bonus
+
     total = max(0, min(total, 100))
 
     if total >= 85:
@@ -162,6 +206,7 @@ def calculate_lead_score(person: dict[str, Any], company: dict[str, Any], icp: d
             "industry": industry_score,
             "signals": signals_score,
             "email": email_sc,
+            "icp_match_bonus": icp_bonus,
             "signals_detected": signals_present,
         },
     }
@@ -185,15 +230,19 @@ async def generate_ai_outreach(
     company: dict[str, Any],
     icp_description: str,
     signals: list[str],
+    why_now: str | None = None,
+    competitor_tool: str | None = None,
 ) -> dict[str, str]:
     """
     Generate personalised outreach using Claude.
+    Includes WHY NOW urgency + competitor switch messaging.
 
     Falls back to deterministic templates when ANTHROPIC_API_KEY is missing.
     """
+    first = person.get("first_name") or (person.get("full_name") or "there").split()[0]
+    cname = company.get("name") or "your company"
+
     if not settings.ANTHROPIC_API_KEY:
-        first = person.get("first_name") or (person.get("full_name") or "there").split()[0]
-        cname = company.get("name") or "your company"
         return {
             "whatsapp_message": f"Hi {first}, I help companies like {cname} with growth — quick question?",
             "email_subject": f"Quick question for {cname}",
@@ -203,6 +252,11 @@ async def generate_ai_outreach(
             ),
             "linkedin_note": f"Hi {first}, would love to connect.",
         }
+
+    urgency = why_now or "Timing is ideal to reach out."
+    competitor_line = ""
+    if competitor_tool:
+        competitor_line = f"\n- They currently use: {competitor_tool} — your pitch should show why switching makes sense."
 
     client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
     prompt = f"""You are an expert sales copywriter for B2B outreach.
@@ -218,13 +272,21 @@ Lead details:
 - Location: {company.get("city")}, {company.get("country")}
 - Signals detected: {signals}
 
-Write highly personalised outreach mentioning at least one specific signal.
+WHY NOW (urgency):
+{urgency}{competitor_line}
+
+CRITICAL RULES:
+1. Open with the WHY NOW urgency — make it feel timely, not cold.
+2. Mention a specific signal (funding, hiring, expansion, competitor tool).
+3. Keep it short, conversational, and personalised.
+4. If they use a competitor tool, subtly hint at a better alternative.
+
 Return ONLY valid JSON (no markdown, no explanation):
 {{
-  "whatsapp_message": "<max 200 chars, conversational, mention signal>",
+  "whatsapp_message": "<max 200 chars, conversational, open with urgency>",
   "email_subject": "<max 60 chars, specific not generic>",
-  "email_body": "<max 300 chars, 2 paragraphs, personalised>",
-  "linkedin_note": "<max 150 chars, connection request>"
+  "email_body": "<max 350 chars, 2 short paragraphs, open with WHY NOW>",
+  "linkedin_note": "<max 150 chars, connection request with hook>"
 }}"""
 
     message = await client.messages.create(

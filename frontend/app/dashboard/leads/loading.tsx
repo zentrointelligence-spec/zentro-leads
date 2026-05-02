@@ -3,18 +3,24 @@
  */
 export default function LeadsLoading() {
   return (
-    <div className="mx-auto max-w-[1600px] space-y-10 animate-pulse pb-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6 lg:gap-4">
-        {Array.from({ length: 6 }).map((_, i) => (
+    <div className="mx-auto max-w-[1600px] space-y-6 animate-pulse pb-4">
+      {/* Stats row */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
           <div
             key={i}
-            className="h-[104px] rounded-lg border border-white/[0.05] bg-[#09090b]/60"
+            className="h-20 rounded-lg border border-border bg-background-secondary"
           />
         ))}
       </div>
-      <div className="h-28 rounded-lg border border-white/[0.05] bg-[#09090b]/60" />
-      <div className="h-48 rounded-lg border border-white/[0.05] bg-[#09090b]/60" />
-      <div className="h-[420px] rounded-lg border border-white/[0.05] bg-[#09090b]/60" />
+      {/* Toolbar */}
+      <div className="h-10 rounded-lg border border-border bg-background-secondary" />
+      {/* Kanban columns */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="h-[420px] rounded-lg border border-border bg-background-secondary" />
+        ))}
+      </div>
     </div>
   );
 }

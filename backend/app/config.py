@@ -4,10 +4,11 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     # ── App ──────────────────────────────────────────────────
-    APP_NAME: str = "Zentro Leads"
-    APP_VERSION: str = "1.0.0"
+    APP_NAME: str = "LeadRadar"
+    APP_VERSION: str = "2.0.0"
     DEBUG: bool = False
     ENVIRONMENT: str = "development"
+    LOG_LEVEL: str = "INFO"
 
     # ── Auth ─────────────────────────────────────────────────
     JWT_SECRET_KEY: str
@@ -64,6 +65,14 @@ class Settings(BaseSettings):
     # ── Rate Limiting ────────────────────────────────────────
     SCRAPE_DELAY_MIN: float = 1.5
     SCRAPE_DELAY_MAX: float = 4.0
+
+    # ── Admin ────────────────────────────────────────────────
+    ADMIN_PHONE: str = ""
+    ADMIN_EMAIL: str = ""
+
+    # ── Cookie Security ──────────────────────────────────────
+    COOKIE_SECURE: bool = True
+    COOKIE_SAMESITE: str = "lax"
 
     class Config:
         env_file = ".env"

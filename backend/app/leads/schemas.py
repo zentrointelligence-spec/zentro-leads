@@ -44,6 +44,11 @@ class CompanyInLead(BaseModel):
     in_the_news: bool = False
     funding_stage: str | None = None
     google_rating: float | None = None
+    years_in_business: str | None = None
+    revenue_estimate: str | None = None
+    is_malaysian_company: bool = False
+    decision_maker_name: str | None = None
+    decision_maker_title: str | None = None
 
 
 class LeadResponse(BaseModel):
@@ -69,6 +74,10 @@ class LeadResponse(BaseModel):
     zims_pushed_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    icp_match_score: int | None = None
+    icp_verdict: str | None = None
+    icp_reason: str | None = None
+    recommended_product: str | None = None
     person: PersonInLead | None = None
     company: CompanyInLead | None = None
 
