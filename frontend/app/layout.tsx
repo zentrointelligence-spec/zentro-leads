@@ -30,8 +30,11 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <title>LeadRadar — AI Lead Generation</title>
-        <meta name="description" content="AI-powered B2B lead generation platform" />
+        <title>Zentro Intelligence — Intelligence That Powers Growth</title>
+        <meta
+          name="description"
+          content="AI-powered lead generation and insurance management for modern agencies across Malaysia and Southeast Asia."
+        />
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
       <body

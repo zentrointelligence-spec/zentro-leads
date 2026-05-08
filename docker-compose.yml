@@ -52,8 +52,38 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
 
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8001"
+      - --reload
+
+  # ── Elasticsearch (single-node, no security for dev) ────
+  elasticsearch:
+    image: elasticsearch:8.13.0
+    container_name: zl_elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - xpack.security.http.ssl.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - zl_esdata:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 30s
 
   # ── n8n Workflow Engine ─────────────────────────────────────
   n8n:
@@ -87,4 +117,5 @@ services:
 volumes:
   zl_pgdata:
   zl_redisdata:
+  zl_esdata:
   zl_n8ndata:

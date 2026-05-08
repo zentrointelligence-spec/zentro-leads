@@ -13,12 +13,16 @@ interface Props {
 
 const pageMeta: Record<string, { title: string; subtitle?: string }> = {
   "/dashboard": { title: "Dashboard", subtitle: "Overview of your pipeline" },
-  "/dashboard/leads": { title: "Lead Intelligence", subtitle: "AI-powered insights to close faster" },
+  "/dashboard/leads": { title: "Leads", subtitle: "AI-generated leads ready to close" },
+  "/dashboard/pipeline": { title: "Pipeline", subtitle: "Drag and drop deals through your funnel" },
+  "/dashboard/customers": { title: "Customers", subtitle: "Converted leads and policy details" },
+  "/dashboard/analytics": { title: "Analytics", subtitle: "Performance insights and conversion tracking" },
+  "/dashboard/settings": { title: "Settings", subtitle: "Manage your account and preferences" },
+  // Legacy routes still accessible
   "/dashboard/icp": { title: "ICP Builder", subtitle: "Define your ideal customer profile" },
   "/dashboard/content": { title: "Content", subtitle: "AI-generated sales content" },
   "/dashboard/broadcasts": { title: "Broadcasts", subtitle: "WhatsApp and email campaigns" },
   "/dashboard/pages": { title: "Landing Pages", subtitle: "Lead capture pages and forms" },
-  "/dashboard/settings": { title: "Settings", subtitle: "Manage your account and preferences" },
 };
 
 export function DashboardShell({ user, children }: Props) {

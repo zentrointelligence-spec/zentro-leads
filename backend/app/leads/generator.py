@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 from fastapi import HTTPException, status
@@ -29,6 +29,8 @@ from app.models import (
 from app.scraper.google_maps.scraper import scrape_google_maps
 from app.scraper.website.scraper import scrape_company_website
 from app.analytics.tracker import track_lead_generated
+from app.search.elasticsearch_client import index_lead as es_index_lead
+from app.search.pinecone_client import upsert_lead_embedding
 from app.intent.engine import enrich_company_intent
 from app.intent.rss_monitor import scan_all_rss_feeds
 from app.scoring.engine import (
@@ -574,7 +576,9 @@ async def upsert_person(data: dict[str, Any], db: AsyncSession) -> ZLPerson:
     new_verified = bool(data.get("email_verified", False))
 
     if existing:
-        _existing_conf = float(existing.email_confidence or 0.0)
+        _existing_conf = float(
+            cast(float | None, existing.email_confidence) or 0.0
+        )
         better = (new_email and new_conf > _existing_conf) or (
             new_email and new_conf == _existing_conf and new_verified
         )
@@ -634,7 +638,9 @@ async def generate_leads_for_icp(user_id: str, icp_id: str, db: AsyncSession) ->
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
 
-    if int(user.leads_used_this_month or 0) >= int(user.leads_limit or 0):
+    _used_mo = cast(int | None, user.leads_used_this_month)
+    _lim_mo = cast(int | None, user.leads_limit)
+    if int(_used_mo or 0) >= int(_lim_mo or 0):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail={
@@ -714,7 +720,10 @@ async def generate_leads_for_icp(user_id: str, icp_id: str, db: AsyncSession) ->
                     maps_category=str(company.industry or ""),
                 )
                 if llm_enrichment.get("confidence", 0) > 0.3:
-                    if llm_enrichment.get("employee_range") and not company.employee_range:
+                    _emp_range = cast(str | None, company.employee_range)
+                    if llm_enrichment.get("employee_range") and (
+                        _emp_range is None or _emp_range == ""
+                    ):
                         company.employee_range = llm_enrichment["employee_range"]
                     if llm_enrichment.get("industry"):
                         company.industry = llm_enrichment["industry"]
@@ -743,7 +752,7 @@ async def generate_leads_for_icp(user_id: str, icp_id: str, db: AsyncSession) ->
                     domain=domain,
                     industry=str(company.industry or ""),
                     employee_range=str(company.employee_range or ""),
-                    founded_year=company.founded_year,
+                    founded_year=cast(int | None, company.founded_year),
                     website_raw_text=website_text,
                     people=people,
                 )
@@ -753,7 +762,10 @@ async def generate_leads_for_icp(user_id: str, icp_id: str, db: AsyncSession) ->
                     company.revenue = details["revenue"]
                 if details.get("years_in_business"):
                     company.years_in_business = details["years_in_business"]
-                if details.get("linkedin_url") and not company.linkedin_url:
+                _existing_li = cast(str | None, company.linkedin_url)
+                if details.get("linkedin_url") and (
+                    _existing_li is None or _existing_li == ""
+                ):
                     company.linkedin_url = details["linkedin_url"]
                 await db.flush()
 
@@ -854,9 +866,11 @@ async def generate_leads_for_icp(user_id: str, icp_id: str, db: AsyncSession) ->
                         seniority = _infer_seniority_from_title(title_guess)
 
                         # Prefer website-scraped phone, fallback to Google Maps phone
+                        _phones = site_data.get("phones") or []
+                        _site_phone = _phones[0] if _phones else None
+                        _maps_phone = cast(str | None, company.phone)
                         contact_phone = (
-                            (site_data.get("phones") or [None])[0]
-                            or company.phone
+                            _site_phone if _site_phone is not None else _maps_phone
                         )
 
                         person = await upsert_person(
@@ -881,15 +895,22 @@ async def generate_leads_for_icp(user_id: str, icp_id: str, db: AsyncSession) ->
 
                         # ── Intent enrichment ──────────────────────────────
                         website_text = str(site_data.get("raw_text") or "")
+                        _is_hiring = cast(bool | None, company.is_hiring)
+                        _funding = cast(str | None, company.funding_stage)
+                        _in_news = cast(bool | None, company.in_the_news)
                         intent_result = await enrich_company_intent(
                             company_name=str(company.name or ""),
                             website_text=website_text,
                             existing_signals=[
-                                s for s in [
-                                    "hiring" if company.is_hiring else None,
-                                    "funded" if company.funding_stage else None,
-                                    "in_the_news" if company.in_the_news else None,
-                                ] if s is not None
+                                s
+                                for s in [
+                                    "hiring" if _is_hiring is True else None,
+                                    "funded"
+                                    if (_funding is not None and _funding != "")
+                                    else None,
+                                    "in_the_news" if _in_news is True else None,
+                                ]
+                                if s is not None
                             ],
                             rss_articles=rss_articles,
                         )
@@ -898,7 +919,10 @@ async def generate_leads_for_icp(user_id: str, icp_id: str, db: AsyncSession) ->
                         competitor_tool = intent_result["primary_competitor"]
 
                         # Update company with new intent data
-                        company.is_hiring = company.is_hiring or intent_result["job_count"] > 0
+                        _prior_hiring = cast(bool | None, company.is_hiring) or False
+                        company.is_hiring = _prior_hiring or (
+                            intent_result["job_count"] > 0
+                        )
                         if intent_result["job_count"] > 0:
                             company.job_posting_count = intent_result["job_count"]
 
@@ -907,7 +931,9 @@ async def generate_leads_for_icp(user_id: str, icp_id: str, db: AsyncSession) ->
                             "seniority": str(person.seniority or ""),
                             "email": str(person.email) if person.email is not None else None,
                             "email_verified": bool(person.email_verified),
-                            "email_confidence": float(person.email_confidence or 0.0),
+                            "email_confidence": float(
+                                cast(float | None, person.email_confidence) or 0.0
+                            ),
                             "job_changed_at": person.job_changed_at,
                             "first_name": str(person.first_name or ""),
                             "full_name": str(person.full_name or ""),
@@ -927,23 +953,39 @@ async def generate_leads_for_icp(user_id: str, icp_id: str, db: AsyncSession) ->
                             if sig not in all_detected_signals:
                                 all_detected_signals.append(sig)
 
+                        _co_hiring = cast(bool | None, company.is_hiring)
+                        _co_news = cast(bool | None, company.in_the_news)
                         company_dict = {
                             "industry": str(company.industry or ""),
                             "employee_range": str(company.employee_range or ""),
-                            "is_hiring": bool(company.is_hiring) or "hiring" in all_detected_signals,
-                            "in_the_news": bool(company.in_the_news) or "in_the_news" in all_detected_signals,
+                            "is_hiring": (_co_hiring is True)
+                            or "hiring" in all_detected_signals,
+                            "in_the_news": (_co_news is True)
+                            or "in_the_news" in all_detected_signals,
                             "funding_stage": str(company.funding_stage or ""),
                             "name": str(company.name or ""),
                             "city": str(company.city or ""),
                             "country": str(company.country or ""),
                         }
                         icp_dict = {
-                            "industries": list(icp.industries or []),
-                            "job_titles": list(icp.job_titles or []),
-                            "seniority_levels": list(icp.seniority_levels or []),
-                            "company_sizes": list(icp.company_sizes or []),
-                            "intent_signals": list(icp.intent_signals or []),
+                            "industries": list(cast(Any, icp.industries) or []),
+                            "job_titles": list(cast(Any, icp.job_titles) or []),
+                            "seniority_levels": list(
+                                cast(Any, icp.seniority_levels) or []
+                            ),
+                            "company_sizes": list(cast(Any, icp.company_sizes) or []),
+                            "intent_signals": list(cast(Any, icp.intent_signals) or []),
                         }
+
+                        icp_validation = await validate_lead_against_icp(
+                            company_name=str(company.name or ""),
+                            company_industry=str(company.industry or ""),
+                            company_description=None,
+                            company_size=str(company.employee_range or ""),
+                            company_city=str(company.city or ""),
+                            icp_description=str(icp.description or icp.name or ""),
+                            icp_industries=list(cast(Any, icp.industries) or []),
+                        )
 
                         # Score using original ICP intent_signals as the match target,
                         # with all detected signals passed as extra_signals.
@@ -998,17 +1040,6 @@ async def generate_leads_for_icp(user_id: str, icp_id: str, db: AsyncSession) ->
                                 competitor_tool=competitor_tool,
                             )
 
-                        # ── ICP Validation ─────────────────────────────────
-                        icp_validation = await validate_lead_against_icp(
-                            company_name=str(company.name or ""),
-                            company_industry=str(company.industry or ""),
-                            company_description=None,
-                            company_size=str(company.employee_range or ""),
-                            company_city=str(company.city or ""),
-                            icp_description=str(icp.description or icp.name or ""),
-                            icp_industries=list(icp.industries or []),
-                        )
-
                         lead = ZLLead(
                             user_id=user_id,
                             icp_id=icp_id,
@@ -1030,6 +1061,56 @@ async def generate_leads_for_icp(user_id: str, icp_id: str, db: AsyncSession) ->
                         )
                         db.add(lead)
                         await db.flush()
+
+                        # Index in Elasticsearch — fire-and-forget, never blocks
+                        _lead_type = "b2b" if company is not None else "b2c"
+                        _location: str | None = None
+                        if company is not None:
+                            _city = str(company.city) if company.city is not None else ""
+                            _country = str(company.country) if company.country is not None else ""
+                            if _city and _country:
+                                _location = f"{_city}, {_country}"
+                            elif _country:
+                                _location = _country
+                            elif _city:
+                                _location = _city
+                        asyncio.create_task(
+                            es_index_lead(
+                                lead_id=str(lead.id),
+                                company_name=str(company.name) if company is not None else None,
+                                industry=str(company.industry) if company is not None and company.industry is not None else None,
+                                location=_location,
+                                lead_score=score_result["score"],
+                                insurance_type=icp_validation.get("recommended_product"),
+                                lead_type=_lead_type,
+                                created_at=lead.created_at,
+                            )
+                        )
+
+                        # Index in Pinecone — fire-and-forget, never blocks
+                        asyncio.create_task(
+                            upsert_lead_embedding(
+                                lead_id=str(lead.id),
+                                lead={
+                                    "company_name": str(company.name) if company is not None else None,
+                                    "industry": str(company.industry) if company is not None and company.industry is not None else None,
+                                    "location": _location,
+                                    "job_title": str(person.job_title) if person is not None and person.job_title is not None else None,
+                                    "insurance_signals": lead.intent_signal,
+                                    "lead_type": _lead_type,
+                                    "insurance_type": icp_validation.get("recommended_product"),
+                                    "lead_score": score_result["score"],
+                                },
+                                metadata={
+                                    "user_id": str(current_user.id),
+                                    "lead_score": score_result["score"],
+                                    "industry": str(company.industry) if company is not None and company.industry is not None else None,
+                                    "location": _location,
+                                    "lead_type": _lead_type,
+                                    "insurance_type": icp_validation.get("recommended_product"),
+                                },
+                            )
+                        )
 
                         # Track conversion event: lead_generated
                         await track_lead_generated(db, lead)

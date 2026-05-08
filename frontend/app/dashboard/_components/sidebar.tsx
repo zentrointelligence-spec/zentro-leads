@@ -7,21 +7,16 @@ import type { User } from "@/lib/api";
 import {
   LayoutDashboard,
   Users,
-  Building2,
-  CheckSquare,
-  Target,
-  Globe,
-  Megaphone,
-  Brain,
   BarChart3,
-  Zap,
   Settings,
-  Plug,
   Sun,
   Moon,
-  Radar,
   LogOut,
   ChevronRight,
+  Kanban,
+  UserCheck,
+  Brain,
+  ShieldAlert,
 } from "lucide-react";
 import { useTheme } from "@/app/providers/theme-provider";
 import { Avatar } from "@/components/ui/avatar";
@@ -34,40 +29,20 @@ interface SidebarProps {
 
 const sections = [
   {
-    title: "OVERVIEW",
+    title: "MAIN",
     items: [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    ],
-  },
-  {
-    title: "PIPELINE",
-    items: [
       { href: "/dashboard/leads", label: "Leads", icon: Users },
-      { href: "/dashboard/companies", label: "Companies", icon: Building2 },
-      { href: "/dashboard/tasks", label: "Tasks", icon: CheckSquare },
-    ],
-  },
-  {
-    title: "CAPTURE",
-    items: [
-      { href: "/dashboard/icp", label: "ICP Builder", icon: Target },
-      { href: "/dashboard/pages", label: "Landing Pages", icon: Globe },
-      { href: "/dashboard/broadcasts", label: "Broadcasts", icon: Megaphone },
-    ],
-  },
-  {
-    title: "INTELLIGENCE",
-    items: [
-      { href: "/dashboard/ai-agents", label: "AI Agents", icon: Brain },
+      { href: "/dashboard/icp", label: "ICP Builder", icon: Brain },
+      { href: "/dashboard/pipeline", label: "Pipeline", icon: Kanban },
+      { href: "/dashboard/customers", label: "Customers", icon: UserCheck },
       { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3 },
-      { href: "/dashboard/automations", label: "Automations", icon: Zap },
     ],
   },
   {
     title: "ACCOUNT",
     items: [
       { href: "/dashboard/settings", label: "Settings", icon: Settings },
-      { href: "/dashboard/integrations", label: "Integrations", icon: Plug },
     ],
   },
 ];
@@ -99,12 +74,13 @@ export function Sidebar({ user, mobileOpen, onCloseMobile }: SidebarProps) {
       >
         {/* Logo */}
         <div className="flex items-center gap-3 px-4 py-5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ backgroundColor: "var(--color-brand)" }}>
-            <Radar className="h-4 w-4 text-white" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-orange-600 to-amber-500">
+            <svg viewBox="0 0 44 44" className="h-5 w-5" aria-hidden="true">
+              <path d="M12 13.5h17.6L14.4 30.5H32" fill="none" stroke="#0B1120" strokeWidth="4.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </div>
           <div>
-            <div className="text-lg font-bold" style={{ color: "var(--sidebar-logo-text)" }}>LeadRadar</div>
-            <div className="text-xs" style={{ color: "var(--sidebar-logo-version)" }}>v2.0</div>
+            <div className="text-base font-black" style={{ color: "var(--sidebar-logo-text)" }}>Zentro Intelligence</div>
           </div>
         </div>
 
@@ -179,6 +155,23 @@ export function Sidebar({ user, mobileOpen, onCloseMobile }: SidebarProps) {
             ))}
           </div>
         </nav>
+
+        {/* Admin Panel link — only shown to admin users */}
+        {user.role === "admin" && (
+          <div className="mt-4">
+            <p className="px-3 mb-1.5 text-[10px] font-bold uppercase tracking-wider text-red-700">
+              System
+            </p>
+            <Link
+              href="/dashboard/admin"
+              onClick={onCloseMobile}
+              className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold transition-all text-red-400 hover:bg-red-950/40 hover:text-red-300"
+            >
+              <ShieldAlert className="h-4 w-4 flex-shrink-0" />
+              Admin Panel
+            </Link>
+          </div>
+        )}
 
         {/* Bottom section */}
         <div className="p-3 space-y-1" style={{ borderTop: "1px solid var(--sidebar-border)" }}>

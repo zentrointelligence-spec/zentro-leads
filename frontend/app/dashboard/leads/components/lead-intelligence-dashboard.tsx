@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { LayoutGrid, Table2, Download, Plus, Search, Flame, Zap, TrendingUp, Snowflake, ChevronDown, Mail, X, Loader2 } from "lucide-react";
+import { LayoutGrid, Table2, Download, Plus, Search, Flame, Zap, TrendingUp, Snowflake, ChevronDown, Mail, X, Loader2, Sheet } from "lucide-react";
 import { toast } from "sonner";
 
 import type { Lead, LeadStats, User } from "@/lib/api";
@@ -205,6 +205,7 @@ export function LeadIntelligenceDashboard({
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
   const [activeLead, setActiveLead] = useState<Lead | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [exportingSheets, setExportingSheets] = useState(false);
 
   useEffect(() => {
     setLeads(initialLeads);
@@ -233,6 +234,45 @@ export function LeadIntelligenceDashboard({
       toast.info("No verified email on file");
     }
   }, [user.company_name]);
+
+  async function handleExportSheets() {
+    setExportingSheets(true);
+    try {
+      const res = await fetch("/api/v1/leads/export/sheets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ lead_ids: null }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Export failed" }));
+        throw new Error(err.detail ?? `Sheets export failed ${res.status}`);
+      }
+      const result: { sheets_url: string; lead_count: number } = await res.json();
+      toast.success(
+        <span>
+          Spreadsheet ready ({result.lead_count} leads) —{" "}
+          <a
+            href={result.sheets_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline font-semibold"
+          >
+            Open Sheet
+          </a>
+        </span>
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Export failed";
+      if (msg.includes("not configured")) {
+        toast.error("Google Sheets not configured — contact your admin.");
+      } else {
+        toast.error("Sheets export failed — try again");
+      }
+    } finally {
+      setExportingSheets(false);
+    }
+  }
 
   async function handleExport() {
     setExporting(true);
@@ -274,6 +314,22 @@ export function LeadIntelligenceDashboard({
     if (status) params.set("status", status);
     else params.delete("status");
     params.set("view", query.view);
+    return `${pathname}?${params.toString()}`;
+  }
+
+  function buildLeadTypeHref(lt: "b2b" | "b2c" | undefined) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (lt) params.set("lead_type", lt);
+    else params.delete("lead_type");
+    params.set("page", "1");
+    return `${pathname}?${params.toString()}`;
+  }
+
+  function buildMarketHref(mkt: "malaysia" | "india" | undefined) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (mkt) params.set("market", mkt);
+    else params.delete("market");
+    params.set("page", "1");
     return `${pathname}?${params.toString()}`;
   }
 
@@ -327,7 +383,16 @@ export function LeadIntelligenceDashboard({
             disabled={exporting}
             leftIcon={exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
           >
-            Export
+            Export CSV
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportSheets}
+            disabled={exportingSheets}
+            leftIcon={exportingSheets ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sheet className="h-3.5 w-3.5" />}
+          >
+            Export to Sheets
           </Button>
           <Link href="/dashboard/icp">
             <Button size="sm" leftIcon={<Plus className="h-3.5 w-3.5" />}>Generate Leads</Button>
@@ -361,6 +426,65 @@ export function LeadIntelligenceDashboard({
 
       {/* Filters */}
       <div className="space-y-3">
+        {/* B2B / B2C type tabs */}
+        <div className="flex items-center gap-1">
+          {([
+            { lt: undefined, label: "All" },
+            { lt: "b2b" as const, label: "B2B" },
+            { lt: "b2c" as const, label: "B2C" },
+          ]).map(({ lt, label }) => {
+            const isActive = query.lead_type === lt || (!query.lead_type && lt === undefined);
+            return (
+              <Link
+                key={label}
+                href={buildLeadTypeHref(lt)}
+                className="rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all"
+                style={
+                  isActive
+                    ? { backgroundColor: lt === "b2c" ? "rgba(245,158,11,0.12)" : "var(--color-brand-bg)", color: lt === "b2c" ? "#f59e0b" : "var(--color-brand)", border: `1px solid ${lt === "b2c" ? "rgba(245,158,11,0.3)" : "var(--color-brand-border)"}` }
+                    : { color: "var(--text-tertiary)", border: "1px solid transparent" }
+                }
+              >
+                {label}
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* Market selector — only visible when B2C filter is active */}
+        {query.lead_type === "b2c" && (
+          <div className="flex items-center gap-1">
+            <span className="text-[11px] font-medium mr-1" style={{ color: "var(--text-tertiary)" }}>Market:</span>
+            {([
+              { mkt: undefined,       label: "Both",        flag: "🌏" },
+              { mkt: "malaysia" as const, label: "Malaysia", flag: "🇲🇾" },
+              { mkt: "india" as const,    label: "India",    flag: "🇮🇳" },
+            ]).map(({ mkt, label, flag }) => {
+              const isActive = query.market === mkt || (!query.market && mkt === undefined);
+              const isIndia  = mkt === "india";
+              return (
+                <Link
+                  key={label}
+                  href={buildMarketHref(mkt)}
+                  className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all"
+                  style={
+                    isActive
+                      ? {
+                          backgroundColor: isIndia ? "rgba(249,115,22,0.10)" : "var(--color-brand-bg)",
+                          color:           isIndia ? "#ea580c" : "var(--color-brand)",
+                          border:          `1px solid ${isIndia ? "rgba(249,115,22,0.3)" : "var(--color-brand-border)"}`,
+                        }
+                      : { color: "var(--text-tertiary)", border: "1px solid transparent" }
+                  }
+                >
+                  <span>{flag}</span>
+                  {label}
+                </Link>
+              );
+            })}
+          </div>
+        )}
+
         {/* Status pills */}
         <div className="flex flex-wrap items-center gap-1.5">
           {STATUS_FILTERS.map((s) => {

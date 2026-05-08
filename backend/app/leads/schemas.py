@@ -78,6 +78,9 @@ class LeadResponse(BaseModel):
     icp_verdict: str | None = None
     icp_reason: str | None = None
     recommended_product: str | None = None
+    lead_type: str = "b2b"
+    insurance_type: str | None = None
+    market: str | None = None
     person: PersonInLead | None = None
     company: CompanyInLead | None = None
 
@@ -96,6 +99,14 @@ class GenerateLeadsRequest(BaseModel):
     """Request body for async lead generation."""
 
     icp_id: str
+    lead_type: str = "b2b"
+    # "b2b" | "b2c" | "both"
+    # b2c and both also trigger the B2C signal scrapers.
+    insurance_type: str | None = None
+    # Optional: "motor" | "home" | None (both).
+    # Only used when lead_type is "b2c" or "both".
+    market: str | None = None
+    # "malaysia" | "india" | None (defaults to malaysia)
 
 
 class GenerateLeadsResponse(BaseModel):
@@ -135,3 +146,51 @@ class NLSearchRequest(BaseModel):
     """Natural-language search for leads."""
 
     query: str
+
+
+class OutreachRequest(BaseModel):
+    """POST body for /leads/{id}/outreach."""
+
+    channel: str = "whatsapp"       # whatsapp | email | sms
+    language: str = "en"            # en | ms | hi | ta
+    insurance_type: str = "insurance"
+
+
+class SheetsExportRequest(BaseModel):
+    """POST body for /leads/export/sheets."""
+
+    lead_ids: list[str] | None = None  # if None, export all leads
+    filters:  dict[str, Any] | None = None
+
+
+# ── Score breakdown schemas ───────────────────────────────────────────────────
+
+class ScoreFactor(BaseModel):
+    """A single scoring dimension with awarded vs possible points."""
+
+    name:             str
+    points_awarded:   int
+    points_possible:  int
+    met:              bool
+    reason:           str
+
+
+class ICPMatchDetail(BaseModel):
+    """Per-dimension ICP match flags."""
+
+    industry:          bool
+    location:          bool
+    company_size:      bool
+    role:              bool
+    overall_match_pct: int
+
+
+class ScoreBreakdownResponse(BaseModel):
+    """Full scoring detail for GET /leads/{id}/score-breakdown."""
+
+    total_score:    int
+    tier:           str
+    factors:        list[ScoreFactor]
+    ai_explanation: str
+    signals:        list[str]
+    icp_match:      ICPMatchDetail

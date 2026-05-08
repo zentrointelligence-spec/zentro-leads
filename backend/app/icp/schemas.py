@@ -1,6 +1,6 @@
 """Pydantic v2 schemas for ICP module."""
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 from typing import List, Optional
 from datetime import datetime
 
@@ -62,9 +62,50 @@ class ICPResponse(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime]
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ICPListResponse(BaseModel):
     items: List[ICPResponse]
     total: int
+
+
+# ── B2C ICP schemas ──────────────────────────────────────────────
+
+class B2CICPRequest(BaseModel):
+    """POST body for /icp/build-b2c."""
+
+    description:      str
+    market:           str = "malaysia"  # "malaysia" | "india"
+    insurance_focus:  Optional[str] = None
+    # "motor" | "medical" | "life" | "home" | "pa"
+
+    @field_validator("description")
+    @classmethod
+    def min_length(cls, v: str) -> str:
+        if len(v.strip()) < 10:
+            raise ValueError("Description must be at least 10 characters.")
+        return v.strip()
+
+    @field_validator("market")
+    @classmethod
+    def valid_market(cls, v: str) -> str:
+        if v not in ("malaysia", "india"):
+            raise ValueError("market must be 'malaysia' or 'india'.")
+        return v
+
+
+class B2CICPResponse(BaseModel):
+    """Response from /icp/build-b2c."""
+
+    life_stages:        List[str]
+    age_ranges:         List[str]
+    income_brackets:    List[str]
+    life_events:        List[str]
+    insurance_needs:    List[str]
+    locations:          List[str]
+    data_sources:       List[str]
+    outreach_timing:    str
+    outreach_channel:   str
+    language_preference: str
+    search_queries:     List[str]

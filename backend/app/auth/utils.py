@@ -6,18 +6,28 @@ cookie helpers. Matches ZIMS auth pattern exactly.
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 import json
+import warnings
 
 from jose import JWTError, jwt
-from passlib.context import CryptContext
-from fastapi import Cookie, HTTPException, status
+from fastapi import Cookie, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+with warnings.catch_warnings():
+    # passlib.utils pulls in stdlib ``crypt`` even when only bcrypt is used; unused on 3.12+.
+    warnings.simplefilter("ignore", DeprecationWarning)
+    from passlib.context import CryptContext
+
 from app.config import settings
+from app.database import get_db
 from app.models import ZLUser
 
 # ── Password hashing ─────────────────────────────────────────
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto",
+    bcrypt__rounds=12,
+)
 
 
 def hash_password(password: str) -> str:
@@ -31,6 +41,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 # ── JWT ──────────────────────────────────────────────────────
+
 
 def create_access_token(user_id: str, email: str) -> str:
     """Create a signed JWT access token."""
@@ -67,12 +78,13 @@ def decode_token(token: str) -> dict:
 
 def build_user_cookie_value(user: ZLUser) -> str:
     """Build the zentro_user cookie value (readable by JS)."""
+    plan_value = user.plan.value if user.plan is not None else "free"
     return json.dumps({
         "id":           user.id,
         "email":        user.email,
-        "full_name":    user.full_name,
+        "full_name":    user.full_name or "",
         "company_name": user.company_name,
-        "plan":         user.plan.value,
+        "plan":         plan_value,
         "avatar_url":   user.avatar_url,
     })
 
@@ -81,7 +93,7 @@ def build_user_cookie_value(user: ZLUser) -> str:
 
 async def get_current_user(
     zentro_session: Optional[str] = Cookie(default=None),
-    db: AsyncSession = None,
+    db: AsyncSession = Depends(get_db),
 ) -> ZLUser:
     """
     FastAPI dependency — reads zentro_session httpOnly cookie,
@@ -114,3 +126,46 @@ async def get_current_user(
         )
 
     return user
+
+
+# ── Role-gated dependencies ───────────────────────────────────
+
+async def require_admin(
+    current_user: ZLUser = Depends(get_current_user),
+) -> ZLUser:
+    """
+    FastAPI dependency — only allows users with role='admin'.
+    Raises HTTP 403 for any other authenticated role.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required.",
+        )
+    return current_user
+
+
+async def require_owner_or_admin(
+    current_user: ZLUser = Depends(get_current_user),
+) -> ZLUser:
+    """
+    FastAPI dependency — allows 'owner' or 'admin' roles.
+    Raises HTTP 403 for plain 'agent' accounts.
+    """
+    if current_user.role not in ("owner", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Agency owner or admin access required.",
+        )
+    return current_user
+
+
+async def require_any_auth(
+    current_user: ZLUser = Depends(get_current_user),
+) -> ZLUser:
+    """
+    FastAPI dependency — any authenticated user passes.
+    Alias for clarity in route definitions where the intent is
+    'this endpoint requires login but not a specific role'.
+    """
+    return current_user

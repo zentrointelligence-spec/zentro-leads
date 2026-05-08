@@ -9,11 +9,74 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { useState } from "react";
-import { ArrowUpDown, Flame, Zap, TrendingUp, Snowflake } from "lucide-react";
+import { ArrowUpDown, Flame, Zap, TrendingUp, Snowflake, SendHorizonal, ArrowUpRight, Loader2, BarChart2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import type { Lead } from "@/lib/api";
 import { emailFromLead, companyNameFromLead } from "@/lib/lead-view";
 import { cn } from "@/lib/cn";
+import { usePipelineStore } from "@/lib/pipeline-store";
+import { useZimsConnected } from "@/lib/use-zims";
+
+// ── B2C life-event signal cell ─────────────────────────────────────────────────
+
+const LIFE_EVENT_EMOJI: Record<string, string> = {
+  new_vehicle:  "🚗",
+  new_property: "🏠",
+  marriage:     "💍",
+  new_baby:     "👶",
+  job_change:   "💼",
+  policy_lapse: "⚠️",
+};
+
+const INSURANCE_LABEL: Record<string, string> = {
+  motor:   "Motor",
+  home:    "Home",
+  medical: "Medical",
+  life:    "Life",
+  pa:      "PA",
+};
+
+function B2CSignalCell({ lead }: { lead: Lead }) {
+  const firstSignal = (lead.intent_signals ?? [])[0] ?? "";
+  const lifeEventKey = Object.keys(LIFE_EVENT_EMOJI).find((k) =>
+    firstSignal.toLowerCase().includes(k.replace("_", " ")) ||
+    firstSignal.toLowerCase().includes(k)
+  ) ?? null;
+
+  const daysOld = lead.created_at
+    ? Math.floor((Date.now() - new Date(lead.created_at).getTime()) / 86_400_000)
+    : null;
+
+  const isAging = daysOld !== null && daysOld >= 45;
+  const emoji    = lifeEventKey ? LIFE_EVENT_EMOJI[lifeEventKey] : "📌";
+  const insLabel = lead.insurance_type ? INSURANCE_LABEL[lead.insurance_type] : null;
+
+  return (
+    <div className="flex flex-col gap-0.5 min-w-[130px]">
+      <div className="flex items-center gap-1">
+        <span className="text-base leading-none">{emoji}</span>
+        {insLabel && (
+          <span
+            className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+            style={{ backgroundColor: "rgba(245,158,11,0.10)", color: "#d97706" }}
+          >
+            {insLabel}
+          </span>
+        )}
+      </div>
+      {daysOld !== null && (
+        <span
+          className="text-[10px]"
+          style={{ color: isAging ? "#ef4444" : "var(--text-tertiary)" }}
+        >
+          {isAging ? `⚠️ Act soon — ${daysOld}d` : `${daysOld}d ago`}
+        </span>
+      )}
+    </div>
+  );
+}
 
 interface Props {
   leads: Lead[];
@@ -47,6 +110,32 @@ const columnHelper = createColumnHelper<Lead>();
 
 export function LeadTableView({ leads, onRowClick }: Props) {
   const [sorting, setSorting] = useState<SortingState>([{ id: "score", desc: true }]);
+  const [zimsPushing, setZimsPushing] = useState<string | null>(null);
+  const { pushLead, leads: pipelineLeads } = usePipelineStore();
+  const { zimsConnected } = useZimsConnected();
+  const router = useRouter();
+
+  async function handleZimsPush(lead: Lead) {
+    setZimsPushing(lead.id);
+    try {
+      const res = await fetch(`/api/v1/leads/${lead.id}/push-to-zims`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (res.ok) {
+        toast.success("Lead synced to ZIMS!", {
+          description: `${lead.person?.full_name ?? companyNameFromLead(lead)} has been pushed.`,
+        });
+      } else {
+        const err = await res.json().catch(() => ({ detail: "Sync failed" }));
+        toast.error(err.detail ?? "ZIMS sync failed");
+      }
+    } catch {
+      toast.error("Could not reach ZIMS");
+    } finally {
+      setZimsPushing(null);
+    }
+  }
 
   const columns = [
     columnHelper.accessor((row) => companyNameFromLead(row), {
@@ -147,17 +236,98 @@ export function LeadTableView({ leads, onRowClick }: Props) {
       },
     }),
     columnHelper.display({
+      id: "b2c_signal",
+      header: "Signal",
+      cell: ({ row }) => {
+        const lead = row.original;
+        if (lead.lead_type !== "b2c") return null;
+        return <B2CSignalCell lead={lead} />;
+      },
+    }),
+    columnHelper.display({
       id: "actions",
       header: "",
-      cell: ({ row }) => (
-        <button
-          className="rounded-md px-2.5 py-1.5 text-[11px] font-medium opacity-0 group-hover:opacity-100 transition-opacity"
-          style={{ backgroundColor: "var(--color-brand-bg)", color: "var(--color-brand)" }}
-          onClick={(e) => { e.stopPropagation(); onRowClick(row.original); }}
-        >
-          View
-        </button>
-      ),
+      cell: ({ row }) => {
+        const lead = row.original;
+        const alreadyPushed = pipelineLeads.some((p) => p.sourceLeadId === lead.id);
+        const isHot = (lead.lead_score ?? 0) >= 85 || lead.lead_tier === "hot";
+        const isPushingToZims = zimsPushing === lead.id;
+
+        return (
+          <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              className="rounded-md px-2.5 py-1.5 text-[11px] font-medium"
+              style={{ backgroundColor: "var(--color-brand-bg)", color: "var(--color-brand)" }}
+              onClick={(e) => { e.stopPropagation(); onRowClick(lead); }}
+            >
+              View
+            </button>
+
+            {/* Score Details */}
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] font-medium transition"
+              style={{ backgroundColor: "var(--bg-tertiary)", color: "var(--text-secondary)", border: "1px solid var(--border-primary)" }}
+              onClick={(e) => { e.stopPropagation(); router.push(`/dashboard/leads/${lead.id}/score`); }}
+              title="View score breakdown"
+            >
+              <BarChart2 className="h-3 w-3" />
+              Score
+            </button>
+
+            {/* Push to Pipeline — always visible */}
+            <button
+              type="button"
+              disabled={alreadyPushed}
+              className={cn(
+                "flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] font-bold transition",
+                alreadyPushed
+                  ? "cursor-not-allowed bg-emerald-500/10 text-emerald-600"
+                  : "bg-orange-500/15 text-orange-300 hover:bg-orange-500/25"
+              )}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (alreadyPushed) return;
+                const tier = (lead.lead_tier?.toUpperCase() ?? "POTENTIAL") as "HOT" | "WARM" | "POTENTIAL" | "COLD";
+                pushLead({
+                  id: lead.id,
+                  sourceLeadId: lead.id,
+                  name: lead.person?.full_name ?? "Unknown",
+                  company: companyNameFromLead(lead) ?? "—",
+                  email: emailFromLead(lead) ?? undefined,
+                  phone: lead.person?.phone ?? undefined,
+                  score: lead.lead_score ?? 0,
+                  tier,
+                  productType: lead.recommended_product ?? undefined,
+                });
+                toast.success("Lead pushed to Pipeline!", {
+                  action: { label: "View Pipeline", onClick: () => router.push("/dashboard/pipeline") },
+                });
+              }}
+            >
+              <SendHorizonal className="h-3 w-3" />
+              {alreadyPushed ? "In Pipeline" : "Pipeline"}
+            </button>
+
+            {/* Sync to ZIMS — only for HOT leads when ZIMS is connected */}
+            {zimsConnected && isHot && (
+              <button
+                type="button"
+                disabled={isPushingToZims}
+                className="flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] font-bold bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Manually sync this HOT lead to ZIMS"
+                onClick={(e) => { e.stopPropagation(); handleZimsPush(lead); }}
+              >
+                {isPushingToZims
+                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                  : <ArrowUpRight className="h-3 w-3" />
+                }
+                ZIMS
+              </button>
+            )}
+          </div>
+        );
+      },
     }),
   ];
 

@@ -1,0 +1,15 @@
+[run]
+source = app
+omit =
+    app/alembic/*
+    app/migrations/*
+    */test_*
+
+[report]
+show_missing = True
+fail_under = 70
+exclude_lines =
+    pragma: no cover
+    if TYPE_CHECKING:
+    raise NotImplementedError
+    if __name__ == .__main__.:

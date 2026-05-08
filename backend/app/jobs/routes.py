@@ -12,7 +12,7 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.auth.utils import get_current_user
+from app.auth.utils import get_current_user, require_admin
 from app.database import get_db
 from app.jobs.tender_monitor import run_tender_monitor
 from app.jobs.job_board_monitor import run_job_board_monitor
@@ -24,15 +24,6 @@ from app.models import ZLAutoSignal, ZLLead, ZLUser
 router = APIRouter(prefix="/api/v1/jobs")
 
 
-async def _get_admin_user(
-    zentro_session: str | None = None,
-    db: AsyncSession = Depends(get_db),
-) -> ZLUser:
-    """Require authenticated user for manual triggers."""
-    user = await get_current_user(zentro_session=zentro_session, db=db)
-    return user
-
-
 # ═══════════════════════════════════════════════════════════════
 # Manual Triggers
 # ═══════════════════════════════════════════════════════════════
@@ -40,50 +31,50 @@ async def _get_admin_user(
 
 @router.post("/tender/run")
 async def trigger_tender_monitor(
-    user: ZLUser = Depends(_get_admin_user),
+    user: ZLUser = Depends(require_admin),
 ) -> dict[str, Any]:
-    """Manually run the tender monitor job."""
-    logger.info(f"Manual trigger: tender_monitor by user {user.id}")
+    """Manually run the tender monitor job. Admin only."""
+    logger.info(f"Manual trigger: tender_monitor by admin {user.id}")
     result = await run_tender_monitor()
     return {"job": "tender_monitor", "result": result}
 
 
 @router.post("/jobboard/run")
 async def trigger_job_board_monitor(
-    user: ZLUser = Depends(_get_admin_user),
+    user: ZLUser = Depends(require_admin),
 ) -> dict[str, Any]:
-    """Manually run the job board monitor job."""
-    logger.info(f"Manual trigger: job_board_monitor by user {user.id}")
+    """Manually run the job board monitor job. Admin only."""
+    logger.info(f"Manual trigger: job_board_monitor by admin {user.id}")
     result = await run_job_board_monitor()
     return {"job": "job_board_monitor", "result": result}
 
 
 @router.post("/ssm/run")
 async def trigger_ssm_monitor(
-    user: ZLUser = Depends(_get_admin_user),
+    user: ZLUser = Depends(require_admin),
 ) -> dict[str, Any]:
-    """Manually run the SSM monitor job."""
-    logger.info(f"Manual trigger: ssm_monitor by user {user.id}")
+    """Manually run the SSM monitor job. Admin only."""
+    logger.info(f"Manual trigger: ssm_monitor by admin {user.id}")
     result = await run_ssm_monitor()
     return {"job": "ssm_monitor", "result": result}
 
 
 @router.post("/renewal/run")
 async def trigger_renewal_monitor(
-    user: ZLUser = Depends(_get_admin_user),
+    user: ZLUser = Depends(require_admin),
 ) -> dict[str, Any]:
-    """Manually run the renewal monitor job."""
-    logger.info(f"Manual trigger: renewal_monitor by user {user.id}")
+    """Manually run the renewal monitor job. Admin only."""
+    logger.info(f"Manual trigger: renewal_monitor by admin {user.id}")
     result = await run_renewal_monitor()
     return {"job": "renewal_monitor", "result": result}
 
 
 @router.post("/digest/run")
 async def trigger_daily_digest(
-    user: ZLUser = Depends(_get_admin_user),
+    user: ZLUser = Depends(require_admin),
 ) -> dict[str, Any]:
-    """Manually run the daily digest job."""
-    logger.info(f"Manual trigger: daily_digest by user {user.id}")
+    """Manually run the daily digest job. Admin only."""
+    logger.info(f"Manual trigger: daily_digest by admin {user.id}")
     result = await run_daily_digest()
     return {"job": "daily_digest", "result": result}
 
@@ -139,12 +130,14 @@ async def job_status() -> dict[str, Any]:
 
 @router.get("/signals/recent")
 async def recent_signals(
-    user: ZLUser = Depends(_get_admin_user),
+    user: ZLUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     limit: int = 20,
 ) -> list[dict[str, Any]]:
     """
     Return recent auto-detected signals for the Live Signal Feed widget.
+
+    Scoped to the authenticated user — not admin-only.
     """
     result = await db.execute(
         select(ZLAutoSignal)

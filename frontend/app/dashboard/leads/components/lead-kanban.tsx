@@ -50,6 +50,81 @@ const TIER_META: Record<string, { icon: React.ElementType; color: string }> = {
   cold: { icon: Snowflake, color: "#6b7280" },
 };
 
+// ── B2C life-event signal badges ──────────────────────────────────────────────
+
+const LIFE_EVENT_META: Record<string, { emoji: string; label: string; color: string; bg: string }> = {
+  new_vehicle:  { emoji: "🚗", label: "New Vehicle",  color: "#3b82f6", bg: "rgba(59,130,246,0.10)" },
+  new_property: { emoji: "🏠", label: "New Property", color: "#10b981", bg: "rgba(16,185,129,0.10)" },
+  marriage:     { emoji: "💍", label: "Marriage",     color: "#a855f7", bg: "rgba(168,85,247,0.10)" },
+  new_baby:     { emoji: "👶", label: "New Baby",     color: "#f59e0b", bg: "rgba(245,158,11,0.10)" },
+  job_change:   { emoji: "💼", label: "Job Change",   color: "#6366f1", bg: "rgba(99,102,241,0.10)" },
+  policy_lapse: { emoji: "⚠️", label: "Policy Lapse", color: "#ef4444", bg: "rgba(239,68,68,0.10)" },
+};
+
+const INSURANCE_LABELS: Record<string, string> = {
+  motor:   "Motor Insurance",
+  home:    "Home Insurance",
+  medical: "Medical Insurance",
+  life:    "Life Insurance",
+  pa:      "Personal Accident",
+};
+
+function B2CSignalBadges({ lead }: { lead: Lead }) {
+  // Extract life_event from the first intent signal string
+  const firstSignal = (lead.intent_signals ?? [])[0] ?? "";
+  const lifeEventKey = Object.keys(LIFE_EVENT_META).find((k) =>
+    firstSignal.toLowerCase().includes(k.replace("_", " ")) ||
+    firstSignal.toLowerCase().includes(k)
+  ) ?? null;
+
+  const eventMeta = lifeEventKey ? LIFE_EVENT_META[lifeEventKey] : null;
+  const insuranceLabel = lead.insurance_type ? INSURANCE_LABELS[lead.insurance_type] : null;
+
+  // Days since signal (from created_at as proxy)
+  const daysOld = lead.created_at
+    ? Math.floor((Date.now() - new Date(lead.created_at).getTime()) / 86_400_000)
+    : null;
+
+  const isAging = daysOld !== null && daysOld >= 45;
+
+  if (!eventMeta && !insuranceLabel && daysOld === null) return null;
+
+  return (
+    <div className="mt-2 space-y-1">
+      {/* Life event badge */}
+      {eventMeta && (
+        <div
+          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+          style={{ backgroundColor: eventMeta.bg, color: eventMeta.color }}
+        >
+          <span>{eventMeta.emoji}</span>
+          {eventMeta.label}
+        </div>
+      )}
+
+      {/* Insurance need */}
+      {insuranceLabel && (
+        <div
+          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ml-1"
+          style={{ backgroundColor: "rgba(245,158,11,0.08)", color: "#f59e0b" }}
+        >
+          {insuranceLabel}
+        </div>
+      )}
+
+      {/* Signal age */}
+      {daysOld !== null && (
+        <div className="flex items-center gap-1 text-[10px]" style={{ color: isAging ? "#ef4444" : "var(--text-tertiary)" }}>
+          {isAging && <span>⚠️</span>}
+          {isAging
+            ? `Act soon — signal aging (${daysOld}d)`
+            : `Signal detected ${daysOld}d ago`}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Presentational card UI (no DnD hooks) ── */
 function LeadCardContent({
   lead,
@@ -201,6 +276,11 @@ function LeadCardContent({
             </span>
           ))}
         </div>
+      )}
+
+      {/* B2C life-event badges */}
+      {lead.lead_type === "b2c" && (
+        <B2CSignalBadges lead={lead} />
       )}
 
       {/* Action buttons */}

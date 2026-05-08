@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { cn } from "@/lib/cn";
 import type { User } from "@/lib/api";
 import { Search, Bell, Menu, LogOut, Settings } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";

@@ -125,6 +125,12 @@ class ZLUser(Base):
     phone          = Column(String)
     avatar_url     = Column(String)
 
+    # Role-based access control
+    # "agent"  — standard insurance agency user (default)
+    # "owner"  — agency owner, can manage their own team members
+    # "admin"  — Zentro Intelligence staff, full platform access
+    role = Column(String, default="agent", nullable=False)
+
     # Plan & usage
     plan                   = Column(Enum(PlanTier), default=PlanTier.FREE, nullable=False)
     leads_used_this_month  = Column(Integer, default=0, nullable=False)
@@ -136,14 +142,22 @@ class ZLUser(Base):
     billing_status         = Column(String, default="inactive")
 
     # ZIMS Integration
-    zims_linked    = Column(Boolean, default=False)
-    zims_agency_id = Column(String)
-    zims_api_key   = Column(String)
+    zims_linked        = Column(Boolean, default=False)
+    zims_agency_id     = Column(String)
+    zims_agent_id      = Column(String)
+    zims_api_url       = Column(String)
+    zims_api_key       = Column(String)
+    zims_last_sync_at  = Column(DateTime(timezone=True))
+    zims_leads_pushed  = Column(Integer, default=0)
 
     # Settings
     digest_enabled      = Column(Boolean, default=True)
     sms_outreach_enabled= Column(Boolean, default=False)
     timezone            = Column(String, default="Asia/Kuala_Lumpur")
+
+    # Plan change audit trail
+    plan_changed_at = Column(DateTime(timezone=True), nullable=True)
+    plan_changed_by = Column(String, nullable=True)  # admin user_id that made the change
 
     # Status
     is_active      = Column(Boolean, default=True)
@@ -261,6 +275,8 @@ class ZLCompany(Base):
     linkedin_url  = Column(String)
     facebook_url  = Column(String)
     instagram_url = Column(String)
+    twitter_url   = Column(String, nullable=True)
+    tiktok_url    = Column(String, nullable=True)
 
     # Tech & signals
     tech_stack        = Column(JSON, default=list)
@@ -335,6 +351,36 @@ class ZLPerson(Base):
     created_at       = Column(DateTime(timezone=True), server_default=func.now())
     updated_at       = Column(DateTime(timezone=True), onupdate=func.now())
 
+    # ── B2C specific ──────────────────────────────────────────────
+    lead_type        = Column(String, default="b2b")
+    # "b2b" | "b2c"
+
+    age              = Column(Integer, nullable=True)
+    age_bracket      = Column(String, nullable=True)
+    # "22-30" | "31-40" | "41-50" | "51-60"
+
+    income_bracket   = Column(String, nullable=True)
+    # MY: "3k-6k" | "6k-10k" | "10k-20k" | "20k+"
+    # IN: "25k-50k" | "50k-100k" | "100k-200k" | "200k+"
+
+    life_event       = Column(String, nullable=True)
+    # "new_vehicle" | "new_property" | "marriage" |
+    # "new_baby" | "job_change" | "policy_lapse"
+
+    life_event_date  = Column(DateTime(timezone=True), nullable=True)
+    life_event_source = Column(String, nullable=True)
+    # "jpj" | "napic" | "social" | "vaahan" | "rera"
+
+    vehicle_type     = Column(String, nullable=True)
+    # "car" | "motorcycle" | "commercial"
+    vehicle_model    = Column(String, nullable=True)
+
+    property_type    = Column(String, nullable=True)
+    # "apartment" | "landed" | "commercial"
+
+    insurance_need   = Column(String, nullable=True)
+    # "motor" | "medical" | "life" | "home" | "pa"
+
     company = relationship("ZLCompany", back_populates="people")
     leads   = relationship("ZLLead",   back_populates="person")
 
@@ -398,6 +444,17 @@ class ZLLead(Base):
     # CRM fields
     notes          = Column(Text)
     follow_up_date = Column(DateTime(timezone=True))
+
+    # Lead type
+    lead_type      = Column(String, default="b2b")
+    # "b2b" | "b2c"
+    insurance_type = Column(String, nullable=True)
+    # B2C: "motor" | "medical" | "life" | "home" | "pa"
+    # B2B: "group_medical" | "commercial" | "fire" | "liability"
+
+    # Market / geography segment
+    market         = Column(String, nullable=True, index=True)
+    # "malaysia" | "india" | None (unset = B2B default)
 
     # ZIMS sync
     zims_lead_id   = Column(String)
@@ -676,6 +733,37 @@ class ZLNotification(Base):
 
     __table_args__ = (
         Index("ix_zl_notifications_user_unread", "user_id", "is_read"),
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+# zl_pipeline_stages
+# ═══════════════════════════════════════════════════════════════
+
+class ZLPipelineStage(Base):
+    """
+    CRM pipeline entry — tracks which stage a lead is in for a given user.
+
+    Valid stage values:
+      new · contacted · qualified · proposal · closed_won · closed_lost
+    """
+    __tablename__ = "zl_pipeline_stages"
+
+    id       = Column(String, primary_key=True, default=gen_id)
+    user_id  = Column(String, ForeignKey("zl_users.id"), nullable=False, index=True)
+    lead_id  = Column(String, ForeignKey("zl_leads.id"), nullable=False, index=True)
+    stage    = Column(String, nullable=False, index=True)
+    notes    = Column(Text,   nullable=True)
+    moved_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    lead = relationship("ZLLead",   foreign_keys=[lead_id])
+    user = relationship("ZLUser",   foreign_keys=[user_id])
+
+    __table_args__ = (
+        Index("ix_zl_pipeline_user_stage", "user_id", "stage"),
+        # A lead can only appear once per user pipeline
+        Index("ix_zl_pipeline_user_lead", "user_id", "lead_id", unique=True),
     )
 
 

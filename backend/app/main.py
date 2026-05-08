@@ -13,13 +13,18 @@ from loguru import logger
 from app.config import settings
 from app.database import engine, Base
 from app.rate_limiter import limiter
+from app.admin.routes import router as admin_router
 from app.analytics.routes import router as analytics_router
 from app.auth.routes import router as auth_router
 from app.billing.routes import router as billing_router
 from app.icp.routes import router as icp_router
 from app.jobs.routes import router as jobs_router
 from app.leads.routes import router as leads_router
+from app.settings.routes import router as settings_router
+from app.pipeline.routes import router as pipeline_router
 from app.scheduler import start_scheduler, shutdown_scheduler
+from app.search.elasticsearch_client import ensure_leads_index, close_client as close_es
+from app.search.pinecone_client import get_pinecone_index as _pinecone_connect
 
 
 # ── Lifespan ─────────────────────────────────────────────────
@@ -29,8 +34,22 @@ async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
     start_scheduler()
+    await ensure_leads_index()
+    # Pinecone — optional; never crash startup if key is missing
+    try:
+        if settings.PINECONE_API_KEY:
+            idx = await _pinecone_connect()
+            if idx is not None:
+                logger.info("Pinecone connected")
+            else:
+                logger.warning("Pinecone: key present but index init failed")
+        else:
+            logger.info("Pinecone not configured — skipping")
+    except Exception as _exc:
+        logger.warning(f"Pinecone startup check failed: {_exc}")
     yield
     shutdown_scheduler()
+    await close_es()
     logger.info("Shutting down Zentro Leads")
 
 
@@ -67,7 +86,10 @@ app.include_router(billing_router, prefix="/api/v1/billing", tags=["billing"])
 app.include_router(analytics_router, prefix="/api/v1/analytics", tags=["analytics"])
 app.include_router(icp_router,  prefix="/api/v1/icp",  tags=["icp"])
 app.include_router(leads_router, prefix="/api/v1/leads", tags=["leads"])
+app.include_router(settings_router,  prefix="/api/v1/settings",  tags=["settings"])
+app.include_router(pipeline_router,  prefix="/api/v1/pipeline",  tags=["pipeline"])
 app.include_router(jobs_router, tags=["jobs"])
+app.include_router(admin_router, prefix="/api/v1", tags=["admin"])
 
 
 # ── Health Check ─────────────────────────────────────────────

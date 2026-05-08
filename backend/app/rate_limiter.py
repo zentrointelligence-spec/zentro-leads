@@ -9,38 +9,28 @@ from slowapi.errors import RateLimitExceeded
 from fastapi import Request
 
 from app.config import settings
-from app.redis_client import get_redis
 
 
-class RedisStorage:
-    """Simple adapter for slowapi to use our Redis client."""
+def _rate_limit_storage_uri() -> str:
+    """
+    SlowAPI storage backend.
 
-    def __init__(self):
-        self._redis = None
-
-    async def _get_redis(self):
-        if self._redis is None:
-            self._redis = get_redis()
-        return self._redis
-
-    async def incr(self, key: str, expiry: int) -> int:
-        r = await self._get_redis()
-        pipe = r.pipeline()
-        pipe.incr(key)
-        pipe.expire(key, expiry)
-        results = await pipe.execute()
-        return results[0]
-
-    async def get(self, key: str) -> int:
-        r = await self._get_redis()
-        val = await r.get(key)
-        return int(val) if val else 0
+    Redis is correct for production. In DEBUG mode, default to in-memory storage so
+    login and other limited routes do not return 500 when Redis is not running
+    locally (SlowAPI would otherwise fail talking to Redis).
+    """
+    explicit = (settings.RATE_LIMIT_STORAGE_URI or "").strip()
+    if explicit:
+        return explicit
+    if settings.DEBUG:
+        return "memory://"
+    return settings.REDIS_URL
 
 
 # Use client IP as the default key func, but allow overriding via request.state
 limiter = Limiter(
     key_func=get_remote_address,
-    storage_uri=settings.REDIS_URL,
+    storage_uri=_rate_limit_storage_uri(),
     strategy="fixed-window",
 )
 

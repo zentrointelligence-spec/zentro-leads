@@ -2,25 +2,54 @@ FROM python:3.12-slim-bookworm
 
 WORKDIR /app
 
-# System deps for Playwright + psycopg2
-RUN apt-get update && apt-get install -y \
-    gcc \
-    libpq-dev \
-    curl \
-    wget \
-    gnupg \
+# ── System dependencies ────────────────────────────────────────────────────────
+# Install everything in a single apt layer.
+# We wipe lists first to guarantee a fresh download of the Debian keyring —
+# this prevents the "invalid GPG signature" error that appears when Docker
+# reuses a stale cached layer.
+RUN rm -rf /var/lib/apt/lists/* \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc \
+        libpq-dev \
+        curl \
+        wget \
+        gnupg \
+        # Playwright / Chromium runtime deps
+        libnss3 \
+        libatk1.0-0 \
+        libatk-bridge2.0-0 \
+        libcups2 \
+        libdrm2 \
+        libxkbcommon0 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxfixes3 \
+        libxrandr2 \
+        libgbm1 \
+        libasound2 \
+        libpangocairo-1.0-0 \
+        libpango-1.0-0 \
+        libcairo2 \
+        libatspi2.0-0 \
+        libx11-xcb1 \
+        libxcb-dri3-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Python deps
+# ── Python deps ────────────────────────────────────────────────────────────────
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers
+# ── Playwright — browser only (deps already installed above) ───────────────────
 RUN playwright install chromium
-RUN playwright install-deps chromium
 
+# ── App source ────────────────────────────────────────────────────────────────
 COPY . .
+
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
 EXPOSE 8001
 
+ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001", "--reload"]

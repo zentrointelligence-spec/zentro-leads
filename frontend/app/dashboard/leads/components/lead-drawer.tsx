@@ -103,10 +103,211 @@ function WhyNowSection({ lead }: { lead: Lead }) {
   );
 }
 
+// ── Outreach draft types ──────────────────────────────────────────────────────
+
+interface OutreachDraft {
+  subject: string;
+  body: string;
+  follow_up: string;
+  call_to_action: string;
+}
+
+const CHANNELS = [
+  { value: "whatsapp", label: "WhatsApp" },
+  { value: "email",    label: "Email" },
+  { value: "sms",      label: "SMS" },
+] as const;
+
+const LANGUAGES = [
+  { value: "en", label: "English" },
+  { value: "ms", label: "Bahasa Malaysia" },
+  { value: "hi", label: "Hindi" },
+  { value: "ta", label: "Tamil" },
+] as const;
+
+type Channel  = typeof CHANNELS[number]["value"];
+type Language = typeof LANGUAGES[number]["value"];
+
+// ── Generate Outreach Modal ───────────────────────────────────────────────────
+
+function OutreachModal({
+  lead,
+  open,
+  onClose,
+}: {
+  lead: Lead;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const [channel,       setChannel]       = useState<Channel>("whatsapp");
+  const [language,      setLanguage]      = useState<Language>("en");
+  const [insuranceType, setInsuranceType] = useState(lead.recommended_product || "");
+  const [loading,       setLoading]       = useState(false);
+  const [draft,         setDraft]         = useState<OutreachDraft | null>(null);
+  const [copied,        setCopied]        = useState(false);
+
+  const handleGenerate = async () => {
+    setLoading(true);
+    setDraft(null);
+    try {
+      const res = await fetch(`/api/v1/leads/${lead.id}/outreach`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          channel,
+          language,
+          insurance_type: insuranceType || "insurance",
+        }),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data: OutreachDraft = await res.json();
+      setDraft(data);
+    } catch {
+      toast.error("Failed to generate outreach draft");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCopy = async (text: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    toast.success("Copied to clipboard");
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const displayText = draft
+    ? (channel === "email"
+        ? `Subject: ${draft.subject}\n\n${draft.body}`
+        : draft.body)
+    : "";
+
+  return (
+    <Dialog open={open} onClose={onClose}>
+      <DialogHeader onClose={onClose}>
+        <DialogTitle>Generate Outreach Draft</DialogTitle>
+      </DialogHeader>
+      <DialogBody>
+        <div className="space-y-4">
+          {/* Controls */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-tertiary)" }}>
+                Channel
+              </label>
+              <select
+                value={channel}
+                onChange={(e) => { setChannel(e.target.value as Channel); setDraft(null); }}
+                className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+                style={{ backgroundColor: "var(--bg-tertiary)", border: "1px solid var(--border-primary)", color: "var(--text-primary)" }}
+              >
+                {CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-tertiary)" }}>
+                Language
+              </label>
+              <select
+                value={language}
+                onChange={(e) => { setLanguage(e.target.value as Language); setDraft(null); }}
+                className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+                style={{ backgroundColor: "var(--bg-tertiary)", border: "1px solid var(--border-primary)", color: "var(--text-primary)" }}
+              >
+                {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-tertiary)" }}>
+              Insurance Type
+            </label>
+            <input
+              type="text"
+              value={insuranceType}
+              onChange={(e) => setInsuranceType(e.target.value)}
+              placeholder="e.g. motor fleet, fire & peril, medical"
+              className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+              style={{ backgroundColor: "var(--bg-tertiary)", border: "1px solid var(--border-primary)", color: "var(--text-primary)" }}
+            />
+          </div>
+
+          {/* Draft output */}
+          {loading && (
+            <div className="flex items-center justify-center gap-2 rounded-xl py-8" style={{ backgroundColor: "var(--bg-tertiary)" }}>
+              <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--color-brand)" }} />
+              <span className="text-sm" style={{ color: "var(--text-tertiary)" }}>Generating with GPT-4o Mini…</span>
+            </div>
+          )}
+
+          {draft && !loading && (
+            <div className="space-y-3">
+              <div className="relative">
+                <textarea
+                  readOnly
+                  value={displayText}
+                  rows={channel === "email" ? 8 : 5}
+                  className="w-full rounded-lg px-3 py-2.5 text-sm resize-y outline-none"
+                  style={{ backgroundColor: "var(--bg-tertiary)", border: "1px solid var(--border-primary)", color: "var(--text-primary)" }}
+                />
+                <button
+                  type="button"
+                  onClick={() => handleCopy(displayText)}
+                  className="absolute right-2 top-2 flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold transition"
+                  style={{ backgroundColor: "var(--bg-card)", color: copied ? "var(--color-brand)" : "var(--text-tertiary)", border: "1px solid var(--border-primary)" }}
+                >
+                  <Copy className="h-3 w-3" />
+                  {copied ? "Copied!" : "Copy"}
+                </button>
+              </div>
+
+              {draft.follow_up && (
+                <div className="rounded-lg p-3 space-y-1" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-primary)" }}>
+                  <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--text-tertiary)" }}>3-Day Follow-up</p>
+                  <p className="text-xs" style={{ color: "var(--text-secondary)" }}>{draft.follow_up}</p>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(draft.follow_up)}
+                    className="flex items-center gap-1 text-[10px] font-semibold transition"
+                    style={{ color: "var(--color-brand)" }}
+                  >
+                    <Copy className="h-3 w-3" /> Copy follow-up
+                  </button>
+                </div>
+              )}
+
+              {draft.call_to_action && (
+                <div className="rounded-lg px-3 py-2 text-xs font-medium" style={{ backgroundColor: "var(--color-brand-border)", color: "var(--color-brand)" }}>
+                  CTA: {draft.call_to_action}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </DialogBody>
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose}>Close</Button>
+        <Button
+          onClick={handleGenerate}
+          disabled={loading}
+          leftIcon={loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageSquare className="h-4 w-4" />}
+        >
+          {draft ? "Regenerate" : "Generate"}
+        </Button>
+      </DialogFooter>
+    </Dialog>
+  );
+}
+
+// ── AI Outreach section (drawer card + modal trigger) ─────────────────────────
+
 function AIOutreachSection({ lead }: { lead: Lead }) {
-  const [tab, setTab] = useState<"whatsapp" | "email">("whatsapp");
-  const [msg, setMsg] = useState("");
-  const [sending, setSending] = useState(false);
+  const [tab,          setTab]          = useState<"whatsapp" | "email">("whatsapp");
+  const [msg,          setMsg]          = useState("");
+  const [sending,      setSending]      = useState(false);
+  const [showGenModal, setShowGenModal] = useState(false);
 
   const email = emailFromLead(lead);
   const phone = lead.person?.phone;
@@ -137,57 +338,71 @@ function AIOutreachSection({ lead }: { lead: Lead }) {
   const disabled = tab === "whatsapp" ? !phone : !email;
 
   return (
-    <div className="rounded-xl p-4 space-y-3" style={{ backgroundColor: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
-      <div className="flex items-center gap-2">
-        <MessageSquare className="h-4 w-4" style={{ color: "var(--color-brand)" }} />
-        <h4 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>AI Outreach</h4>
-      </div>
-
-      <div className="flex gap-2">
-        <button
-          onClick={() => setTab("whatsapp")}
-          className={cn("flex-1 rounded-lg px-3 py-2 text-xs font-medium transition-all", tab === "whatsapp" ? "font-semibold" : "")}
-          style={tab === "whatsapp" ? { backgroundColor: "var(--bg-card)", color: "var(--text-primary)", border: "1px solid var(--border-primary)" } : { color: "var(--text-tertiary)" }}
-        >
-          WhatsApp
-        </button>
-        <button
-          onClick={() => setTab("email")}
-          className={cn("flex-1 rounded-lg px-3 py-2 text-xs font-medium transition-all", tab === "email" ? "font-semibold" : "")}
-          style={tab === "email" ? { backgroundColor: "var(--bg-card)", color: "var(--text-primary)", border: "1px solid var(--border-primary)" } : { color: "var(--text-tertiary)" }}
-        >
-          Email
-        </button>
-      </div>
-
-      {disabled && (
-        <div className="rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: "var(--bg-card)", color: "var(--text-tertiary)", border: "1px solid var(--border-primary)" }}>
-          No {tab === "whatsapp" ? "phone" : "email"} on file
+    <>
+      <div className="rounded-xl p-4 space-y-3" style={{ backgroundColor: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <MessageSquare className="h-4 w-4" style={{ color: "var(--color-brand)" }} />
+            <h4 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>AI Outreach</h4>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowGenModal(true)}
+            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-bold transition"
+            style={{ backgroundColor: "var(--color-brand-border)", color: "var(--color-brand)", border: "1px solid var(--color-brand-border)" }}
+          >
+            <Zap className="h-3 w-3" /> Generate Draft
+          </button>
         </div>
-      )}
 
-      <textarea
-        value={msg}
-        onChange={(e) => setMsg(e.target.value)}
-        placeholder={tab === "whatsapp" ? "Type your WhatsApp message..." : "Type your email..."}
-        disabled={disabled || sending}
-        className="w-full rounded-lg px-3 py-2.5 text-sm min-h-[100px] resize-y outline-none transition-all focus:ring-2"
-        style={{
-          backgroundColor: "var(--bg-card)",
-          border: "1px solid var(--border-primary)",
-          color: "var(--text-primary)",
-        }}
-      />
+        <div className="flex gap-2">
+          <button
+            onClick={() => setTab("whatsapp")}
+            className={cn("flex-1 rounded-lg px-3 py-2 text-xs font-medium transition-all", tab === "whatsapp" ? "font-semibold" : "")}
+            style={tab === "whatsapp" ? { backgroundColor: "var(--bg-card)", color: "var(--text-primary)", border: "1px solid var(--border-primary)" } : { color: "var(--text-tertiary)" }}
+          >
+            WhatsApp
+          </button>
+          <button
+            onClick={() => setTab("email")}
+            className={cn("flex-1 rounded-lg px-3 py-2 text-xs font-medium transition-all", tab === "email" ? "font-semibold" : "")}
+            style={tab === "email" ? { backgroundColor: "var(--bg-card)", color: "var(--text-primary)", border: "1px solid var(--border-primary)" } : { color: "var(--text-tertiary)" }}
+          >
+            Email
+          </button>
+        </div>
 
-      <div className="flex items-center justify-between">
-        <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-          {tab === "whatsapp" ? (phone ?? "No phone") : (email ?? "No email")}
-        </span>
-        <Button size="sm" onClick={handleSend} disabled={disabled || !msg.trim() || sending} leftIcon={sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}>
-          Send
-        </Button>
+        {disabled && (
+          <div className="rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: "var(--bg-card)", color: "var(--text-tertiary)", border: "1px solid var(--border-primary)" }}>
+            No {tab === "whatsapp" ? "phone" : "email"} on file
+          </div>
+        )}
+
+        <textarea
+          value={msg}
+          onChange={(e) => setMsg(e.target.value)}
+          placeholder={tab === "whatsapp" ? "Paste your generated message or type here…" : "Paste your generated email or type here…"}
+          disabled={disabled || sending}
+          className="w-full rounded-lg px-3 py-2.5 text-sm min-h-[100px] resize-y outline-none transition-all focus:ring-2"
+          style={{
+            backgroundColor: "var(--bg-card)",
+            border: "1px solid var(--border-primary)",
+            color: "var(--text-primary)",
+          }}
+        />
+
+        <div className="flex items-center justify-between">
+          <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+            {tab === "whatsapp" ? (phone ?? "No phone") : (email ?? "No email")}
+          </span>
+          <Button size="sm" onClick={handleSend} disabled={disabled || !msg.trim() || sending} leftIcon={sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}>
+            Send
+          </Button>
+        </div>
       </div>
-    </div>
+
+      <OutreachModal lead={lead} open={showGenModal} onClose={() => setShowGenModal(false)} />
+    </>
   );
 }
 

@@ -1,39 +1,40 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { useState } from "react";
 import {
-  Target,
-  Plus,
-  Loader2,
-  X,
   Sparkles,
-  ChevronDown,
-  ChevronUp,
-  Zap,
-  Building2,
-  MapPin,
-  Briefcase,
-  BarChart3,
-  Search,
-  Tag,
-  Activity,
-  Pencil,
-  Trash2,
   Save,
+  Loader2,
+  Brain,
+  MapPin,
+  Building2,
+  Users,
+  Tags,
+  Search,
+  Zap,
+  ChevronRight,
+  CheckCircle2,
+  Plus,
+  Trash2,
+  Clock,
+  Smartphone,
+  Globe,
+  Heart,
+  DollarSign,
+  Calendar,
+  Database,
 } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/cn";
-import { generateLeads } from "@/app/dashboard/leads/actions";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
-interface ICP {
-  id: string;
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+interface ICPResult {
+  id?: string;
   name: string;
-  description: string | null;
+  description: string;
   industries: string[];
   job_titles: string[];
   seniority_levels: string[];
@@ -42,767 +43,572 @@ interface ICP {
   keywords: string[];
   intent_signals: string[];
   search_queries: string[];
-  total_leads_generated: number;
-  conversion_rate: number;
-  is_active: boolean;
-  created_at: string;
+  total_leads_generated?: number;
+  conversion_rate?: number;
+  is_active?: boolean;
+  created_at?: string;
 }
 
-interface ICPListResponse {
-  items: ICP[];
-  total: number;
+interface B2CResult {
+  life_stages: string[];
+  age_ranges: string[];
+  income_brackets: string[];
+  life_events: string[];
+  insurance_needs: string[];
+  locations: string[];
+  data_sources: string[];
+  outreach_timing: string;
+  outreach_channel: string;
+  language_preference: string;
+  search_queries: string[];
 }
 
-async function fetchICPs(): Promise<ICPListResponse> {
-  const res = await fetch("/api/v1/icp/", { credentials: "include" });
-  if (!res.ok) throw new Error("Failed to load ICPs");
-  return res.json();
-}
+type Mode = "b2b" | "b2c";
 
-async function buildICPWithAI(description: string): Promise<ICP> {
-  const res = await fetch("/api/v1/icp/build", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify({ description }),
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.detail ?? "Failed to build ICP");
-  return json;
-}
+// ── Shared components ──────────────────────────────────────────────────────────
 
-async function createICP(body: {
-  name: string;
-  description?: string;
-  industries?: string[];
-  job_titles?: string[];
-  company_sizes?: string[];
-  locations?: string[];
-  keywords?: string[];
-}): Promise<ICP> {
-  const res = await fetch("/api/v1/icp/", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify(body),
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.detail ?? "Failed to create ICP");
-  return json;
-}
-
-async function updateICP(
-  id: string,
-  body: { name?: string; description?: string; industries?: string[]; job_titles?: string[] }
-): Promise<ICP> {
-  const res = await fetch(`/api/v1/icp/${id}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify(body),
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.detail ?? "Failed to update ICP");
-  return json;
-}
-
-async function deleteICP(id: string): Promise<{ message: string }> {
-  const res = await fetch(`/api/v1/icp/${id}`, {
-    method: "DELETE",
-    credentials: "include",
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.detail ?? "Failed to delete ICP");
-  return json;
-}
-
-const TAG_META: Record<string, { icon: React.ElementType; color: string }> = {
-  Industries: { icon: Building2, color: "bg-primary-light text-primary border-primary/20" },
-  "Job Titles": { icon: Briefcase, color: "bg-accent-light text-accent-dark border-accent/20 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800" },
-  Seniority: { icon: BarChart3, color: "bg-warm-light text-warm border-warm/20" },
-  "Company Sizes": { icon: Building2, color: "bg-success-light text-success border-success/20" },
-  Locations: { icon: MapPin, color: "bg-cyan-100 text-cyan-600 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400 dark:border-cyan-800" },
-  Keywords: { icon: Tag, color: "bg-orange-100 text-orange-600 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800" },
-  "Intent Signals": { icon: Activity, color: "bg-hot-light text-hot border-hot/20" },
-};
-
-/* ── Tag Input ───────────────────────────────── */
-
-function TagInput({
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  value: string[];
-  onChange: (vals: string[]) => void;
-  placeholder?: string;
-}) {
-  const [text, setText] = useState("");
-
-  function addTag() {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    const tags = trimmed.split(",").map((t) => t.trim()).filter(Boolean);
-    const next = [...new Set([...value, ...tags])];
-    onChange(next);
-    setText("");
-  }
-
-  function removeTag(tag: string) {
-    onChange(value.filter((v) => v !== tag));
-  }
-
+function TagChip({ label, onRemove }: { label: string; onRemove?: () => void }) {
   return (
-    <div>
-      <label className="block text-sm font-medium text-foreground-primary mb-1.5">
-        {label}
-      </label>
-      <div className="flex gap-2">
-        <input
-          type="text"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              addTag();
-            }
-          }}
-          placeholder={placeholder ?? "Add tag and press Enter"}
-          className="flex-1 rounded-md border border-border bg-background-elevated px-3 py-2 text-sm text-foreground-primary placeholder:text-foreground-muted focus:outline-none focus:ring-2 focus:ring-primary/20"
-        />
-        <Button type="button" size="sm" onClick={addTag}>
-          Add
-        </Button>
-      </div>
-      {value.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mt-2">
-          {value.map((tag) => (
-            <span
-              key={tag}
-              className="inline-flex items-center gap-1 rounded-full bg-background-secondary px-2.5 py-0.5 text-2xs font-medium text-foreground-secondary"
-            >
-              {tag}
-              <button
-                type="button"
-                onClick={() => removeTag(tag)}
-                className="text-foreground-muted hover:text-hot"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </span>
-          ))}
-        </div>
+    <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 px-2.5 py-1 text-xs font-medium text-primary">
+      {label}
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          className="ml-0.5 rounded-full hover:bg-primary/20 p-0.5 transition-colors"
+          aria-label={`Remove ${label}`}
+        >
+          <Trash2 className="h-2.5 w-2.5" />
+        </button>
       )}
+    </span>
+  );
+}
+
+function ICPSection({
+  icon,
+  title,
+  items,
+  color = "primary",
+}: {
+  icon: React.ReactNode;
+  title: string;
+  items: string[];
+  color?: string;
+}) {
+  if (!items?.length) return null;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <div
+          className={cn(
+            "flex h-7 w-7 items-center justify-center rounded-lg",
+            color === "hot"   ? "bg-red-500/10"     :
+            color === "warm"  ? "bg-amber-500/10"   :
+            color === "green" ? "bg-emerald-500/10" :
+            color === "blue"  ? "bg-blue-500/10"    : "bg-primary/10"
+          )}
+        >
+          {icon}
+        </div>
+        <span className="text-xs font-semibold text-foreground-secondary uppercase tracking-wide">
+          {title}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {items.map((item) => (
+          <TagChip key={item} label={item} />
+        ))}
+      </div>
     </div>
   );
 }
 
-/* ── ICPCard ─────────────────────────────────── */
-
-function ICPCard({
-  icp,
-  onEdit,
-  onDelete,
-}: {
-  icp: ICP;
-  onEdit: (icp: ICP) => void;
-  onDelete: (icp: ICP) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const [isPending, startTransition] = useTransition();
-
-  function handleGenerate(e: React.MouseEvent) {
-    e.stopPropagation();
-    startTransition(async () => {
-      const result = await generateLeads(icp.id);
-      if (result.ok) {
-        toast.success(result.message ?? "Lead generation started — results appear shortly.");
-      } else {
-        toast.error(result.error ?? "Lead generation failed.");
-      }
-    });
-  }
-
-  const tagGroups = [
-    { label: "Industries", values: icp.industries },
-    { label: "Job Titles", values: icp.job_titles },
-    { label: "Seniority", values: icp.seniority_levels },
-    { label: "Company Sizes", values: icp.company_sizes },
-    { label: "Locations", values: icp.locations },
-    { label: "Keywords", values: icp.keywords },
-    { label: "Intent Signals", values: icp.intent_signals },
-  ];
-
+function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  if (!value) return null;
   return (
-    <Card className="overflow-hidden transition-all hover:shadow-md">
-      <div
-        className="p-5 cursor-pointer hover:bg-background-secondary/30 transition-colors"
-        onClick={() => setExpanded(!expanded)}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-7 h-7 rounded-md bg-primary-light flex items-center justify-center flex-shrink-0">
-                <Target className="w-4 h-4 text-primary" />
-              </div>
-              <h3 className="text-foreground-primary font-semibold text-sm truncate">
-                {icp.name}
-              </h3>
-            </div>
-            {icp.description && (
-              <p className="text-foreground-secondary text-xs leading-relaxed line-clamp-2 ml-9">
-                {icp.description}
-              </p>
-            )}
-            <div className="flex items-center gap-3 mt-3 ml-9">
-              <Badge variant="secondary" className="text-2xs">
-                {icp.total_leads_generated} leads
-              </Badge>
-              <Badge variant="outline" className="text-2xs">
-                {icp.industries.length} industries
-              </Badge>
-              {icp.conversion_rate > 0 && (
-                <Badge variant="success" className="text-2xs">
-                  {icp.conversion_rate}% conv.
-                </Badge>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit(icp);
-              }}
-              className="rounded-md p-1.5 text-foreground-muted hover:bg-background-secondary hover:text-foreground-primary transition-colors"
-              title="Edit ICP"
-            >
-              <Pencil className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete(icp);
-              }}
-              className="rounded-md p-1.5 text-foreground-muted hover:bg-hot-light hover:text-hot transition-colors"
-              title="Delete ICP"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={handleGenerate}
-              disabled={isPending}
-              className="h-8 text-2xs ml-1"
-            >
-              {isPending ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
-              ) : (
-                <Zap className="w-3.5 h-3.5 mr-1" />
-              )}
-              {isPending ? "Starting…" : "Generate"}
-            </Button>
-            {expanded ? (
-              <ChevronUp className="w-4 h-4 text-foreground-muted" />
-            ) : (
-              <ChevronDown className="w-4 h-4 text-foreground-muted" />
-            )}
-          </div>
-        </div>
+    <div className="flex items-start gap-3 rounded-xl border border-border bg-background-elevated px-4 py-3">
+      <div className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10">
+        {icon}
       </div>
-
-      {expanded && (
-        <div className="border-t border-border p-5 space-y-4 bg-background-secondary/20">
-          {tagGroups.map(({ label, values }) => {
-            if (values.length === 0) return null;
-            const meta =
-              TAG_META[label] ?? {
-                icon: Tag,
-                color:
-                  "bg-background-secondary text-foreground-secondary border-border",
-              };
-            const Icon = meta.icon;
-            return (
-              <div key={label}>
-                <div className="flex items-center gap-1.5 mb-2">
-                  <Icon className="h-3.5 w-3.5 text-foreground-muted" />
-                  <p className="text-foreground-muted text-2xs font-semibold uppercase tracking-wide">
-                    {label}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {values.map((v) => (
-                    <span
-                      key={v}
-                      className={cn(
-                        "text-2xs px-2.5 py-1 rounded-full font-medium border",
-                        meta.color
-                      )}
-                    >
-                      {v}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-          {icp.search_queries.length > 0 && (
-            <div>
-              <div className="flex items-center gap-1.5 mb-2">
-                <Search className="h-3.5 w-3.5 text-foreground-muted" />
-                <p className="text-foreground-muted text-2xs font-semibold uppercase tracking-wide">
-                  Search Queries
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                {icp.search_queries.map((q) => (
-                  <div
-                    key={q}
-                    className="flex items-start gap-2 text-xs text-foreground-secondary"
-                  >
-                    <span className="text-primary mt-0.5 flex-shrink-0">›</span>
-                    {q}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </Card>
+      <div>
+        <p className="text-xs font-semibold text-foreground-secondary uppercase tracking-wide">{label}</p>
+        <p className="mt-0.5 text-sm text-foreground-primary">{value}</p>
+      </div>
+    </div>
   );
 }
 
-/* ── Main Page ───────────────────────────────── */
+// ── Mode Toggle ────────────────────────────────────────────────────────────────
 
-type ModalMode = "ai" | "manual" | "edit" | null;
+function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
+  return (
+    <div className="inline-flex rounded-xl border border-border bg-background-secondary p-1 gap-1">
+      {(["b2b", "b2c"] as Mode[]).map((m) => (
+        <button
+          key={m}
+          type="button"
+          onClick={() => onChange(m)}
+          className={cn(
+            "rounded-lg px-4 py-1.5 text-xs font-semibold transition-all",
+            mode === m
+              ? "bg-primary text-white shadow-sm"
+              : "text-foreground-secondary hover:text-foreground-primary"
+          )}
+        >
+          {m === "b2b" ? "B2B Mode" : "B2C Mode"}
+        </button>
+      ))}
+    </div>
+  );
+}
 
-export default function ICPPage() {
-  const [modalMode, setModalMode] = useState<ModalMode>(null);
-  const [editingIcp, setEditingIcp] = useState<ICP | null>(null);
-  const [deletingIcp, setDeletingIcp] = useState<ICP | null>(null);
-  const queryClient = useQueryClient();
+// ── Main page ──────────────────────────────────────────────────────────────────
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["icps"],
-    queryFn: fetchICPs,
-    refetchInterval: 15000,
-    refetchOnWindowFocus: true,
-  });
+export default function ICPBuilderPage() {
+  const [mode, setMode] = useState<Mode>("b2b");
 
-  /* AI Build */
-  const [aiDescription, setAiDescription] = useState("");
-  const buildMutation = useMutation({
-    mutationFn: buildICPWithAI,
-    onSuccess: () => {
-      toast.success("ICP built successfully!");
-      queryClient.invalidateQueries({ queryKey: ["icps"] });
-      closeModal();
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
+  // B2B state
+  const [b2bDesc, setB2bDesc] = useState("");
+  const [b2bBuilding, setB2bBuilding] = useState(false);
+  const [b2bSaving, setB2bSaving] = useState(false);
+  const [b2bResult, setB2bResult] = useState<ICPResult | null>(null);
+  const [b2bSaved, setB2bSaved] = useState(false);
 
-  /* Manual Create */
-  const [manualForm, setManualForm] = useState({
-    name: "",
-    description: "",
-    industries: [] as string[],
-    job_titles: [] as string[],
-    company_sizes: [] as string[],
-    locations: [] as string[],
-    keywords: [] as string[],
-  });
-  const createMutation = useMutation({
-    mutationFn: createICP,
-    onSuccess: () => {
-      toast.success("ICP created!");
-      queryClient.invalidateQueries({ queryKey: ["icps"] });
-      closeModal();
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
+  // B2C state
+  const [b2cDesc, setB2cDesc] = useState("");
+  const [b2cMarket, setB2cMarket] = useState<"malaysia" | "india">("malaysia");
+  const [b2cFocus, setB2cFocus] = useState("");
+  const [b2cBuilding, setB2cBuilding] = useState(false);
+  const [b2cResult, setB2cResult] = useState<B2CResult | null>(null);
 
-  /* Edit */
-  const [editForm, setEditForm] = useState({
-    name: "",
-    description: "",
-    industries: [] as string[],
-    job_titles: [] as string[],
-  });
-  const updateMutation = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: Parameters<typeof updateICP>[1] }) =>
-      updateICP(id, body),
-    onSuccess: () => {
-      toast.success("ICP updated!");
-      queryClient.invalidateQueries({ queryKey: ["icps"] });
-      closeModal();
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
+  // ── B2B handlers ─────────────────────────────────────────────────────────────
 
-  /* Delete */
-  const deleteMutation = useMutation({
-    mutationFn: deleteICP,
-    onSuccess: () => {
-      toast.success("ICP deleted");
-      queryClient.invalidateQueries({ queryKey: ["icps"] });
-      setDeletingIcp(null);
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
-
-  function closeModal() {
-    setModalMode(null);
-    setEditingIcp(null);
-    setAiDescription("");
-    setManualForm({
-      name: "",
-      description: "",
-      industries: [],
-      job_titles: [],
-      company_sizes: [],
-      locations: [],
-      keywords: [],
-    });
+  async function handleB2BBuild() {
+    const trimmed = b2bDesc.trim();
+    if (trimmed.length < 10) {
+      toast.error("Describe your ideal customer in at least 10 characters.");
+      return;
+    }
+    setB2bBuilding(true);
+    setB2bResult(null);
+    setB2bSaved(false);
+    try {
+      const res = await fetch("/api/v1/icp/build", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ description: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail ?? "ICP build failed");
+      setB2bResult(data as ICPResult);
+      toast.success("ICP generated — review and save below.");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to generate ICP");
+    } finally {
+      setB2bBuilding(false);
+    }
   }
 
-  function openEdit(icp: ICP) {
-    setEditingIcp(icp);
-    setEditForm({
-      name: icp.name,
-      description: icp.description ?? "",
-      industries: icp.industries,
-      job_titles: icp.job_titles,
-    });
-    setModalMode("edit");
+  async function handleB2BSave() {
+    if (!b2bResult) return;
+    setB2bSaving(true);
+    try {
+      const res = await fetch("/api/v1/icp/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          name: b2bResult.name,
+          description: b2bResult.description,
+          industries: b2bResult.industries,
+          job_titles: b2bResult.job_titles,
+          seniority_levels: b2bResult.seniority_levels,
+          company_sizes: b2bResult.company_sizes,
+          locations: b2bResult.locations,
+          keywords: b2bResult.keywords,
+          intent_signals: b2bResult.intent_signals,
+          search_queries: b2bResult.search_queries,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail ?? "Save failed");
+      setB2bResult((prev) => prev ? { ...prev, id: data.id } : prev);
+      setB2bSaved(true);
+      toast.success(`ICP "${b2bResult.name}" saved!`, {
+        action: {
+          label: "Generate Leads",
+          onClick: () => (window.location.href = "/dashboard/leads"),
+        },
+      });
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to save ICP");
+    } finally {
+      setB2bSaving(false);
+    }
   }
+
+  // ── B2C handler ───────────────────────────────────────────────────────────────
+
+  async function handleB2CBuild() {
+    const trimmed = b2cDesc.trim();
+    if (trimmed.length < 10) {
+      toast.error("Describe your ideal prospect in at least 10 characters.");
+      return;
+    }
+    setB2cBuilding(true);
+    setB2cResult(null);
+    try {
+      const res = await fetch("/api/v1/icp/build-b2c", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          description: trimmed,
+          market: b2cMarket,
+          insurance_focus: b2cFocus || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail ?? "B2C ICP build failed");
+      setB2cResult(data as B2CResult);
+      toast.success("B2C prospect profile generated.");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to generate B2C ICP");
+    } finally {
+      setB2cBuilding(false);
+    }
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-6 animate-fade-in-up">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mx-auto max-w-3xl space-y-6 animate-fade-in-up">
+      {/* Header + toggle */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h2 className="text-2xl font-bold text-foreground-primary">
-            ICP Builder
-          </h2>
-          <p className="text-foreground-secondary text-sm mt-0.5">
-            Define your Ideal Customer Profile — AI builds targeting criteria from
-            one sentence.
+          <h1 className="text-2xl font-bold text-foreground-primary">ICP Builder</h1>
+          <p className="mt-0.5 text-sm text-foreground-secondary">
+            {mode === "b2b"
+              ? "Describe your ideal business customer — Claude builds a complete B2B profile."
+              : "Describe your ideal individual prospect — Claude builds a life-event B2C profile."}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            onClick={() => setModalMode("manual")}
-            leftIcon={<Plus className="w-4 h-4" />}
-          >
-            Create Manually
-          </Button>
-          <Button onClick={() => setModalMode("ai")} leftIcon={<Sparkles className="w-4 h-4" />}>
-            AI Build
-          </Button>
-        </div>
+        <ModeToggle mode={mode} onChange={(m) => { setMode(m); }} />
       </div>
 
-      {/* ICP List */}
-      {isLoading ? (
-        <div className="flex items-center justify-center py-16">
-          <Loader2 className="w-6 h-6 text-primary animate-spin" />
-        </div>
-      ) : data?.items.length === 0 ? (
-        <Card className="py-16">
-          <CardContent className="flex flex-col items-center text-center">
-            <div className="w-14 h-14 rounded-2xl bg-primary-light flex items-center justify-center mb-4">
-              <Target className="w-7 h-7 text-primary" />
-            </div>
-            <p className="text-foreground-primary font-semibold mb-2">
-              No ICPs yet
-            </p>
-            <p className="text-foreground-secondary text-sm mb-6 max-w-xs">
-              Describe your business in one sentence and let AI build your complete
-              targeting criteria.
-            </p>
-            <div className="flex items-center gap-2">
-              <Button variant="secondary" onClick={() => setModalMode("manual")}>
-                <Plus className="w-4 h-4 mr-1.5" />
-                Create manually
-              </Button>
-              <Button onClick={() => setModalMode("ai")}>
-                <Sparkles className="w-4 h-4 mr-1.5" />
-                Build with AI
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {data?.items.map((icp) => (
-            <ICPCard
-              key={icp.id}
-              icp={icp}
-              onEdit={openEdit}
-              onDelete={(icp) => setDeletingIcp(icp)}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Create / Edit Modal */}
-      {modalMode && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-lg shadow-2xl border-border max-h-[90vh] flex flex-col">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-6 border-b border-border flex-shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-primary-light flex items-center justify-center">
-                  {modalMode === "ai" ? (
-                    <Sparkles className="w-5 h-5 text-primary" />
-                  ) : modalMode === "edit" ? (
-                    <Pencil className="w-5 h-5 text-primary" />
-                  ) : (
-                    <Plus className="w-5 h-5 text-primary" />
-                  )}
+      {/* ── B2B MODE ──────────────────────────────────────────────────────────── */}
+      {mode === "b2b" && (
+        <>
+          <Card>
+            <CardContent className="p-6 space-y-4">
+              <div className="flex items-start gap-4">
+                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                  <Brain className="h-5 w-5 text-primary" />
                 </div>
                 <div>
-                  <h3 className="text-foreground-primary font-semibold">
-                    {modalMode === "ai"
-                      ? "AI ICP Builder"
-                      : modalMode === "edit"
-                        ? "Edit ICP"
-                        : "Create ICP Manually"}
-                  </h3>
-                  <p className="text-foreground-muted text-2xs">
-                    {modalMode === "ai"
-                      ? "Powered by Claude"
-                      : modalMode === "edit"
-                        ? "Update your targeting criteria"
-                        : "Build your ICP step by step"}
-                  </p>
+                  <h2 className="text-base font-bold text-foreground-primary">Who is your ideal business customer?</h2>
+                  <p className="text-sm text-foreground-muted">Industry, size, location, role — one sentence is enough.</p>
                 </div>
               </div>
-              <button
-                onClick={closeModal}
-                className="text-foreground-muted hover:text-foreground-primary transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            {/* Modal Body */}
-            <div className="p-6 overflow-y-auto flex-1 space-y-4">
-              {modalMode === "ai" && (
-                <>
-                  <label className="block text-foreground-secondary text-sm font-medium mb-2">
-                    Describe what you sell (1–3 sentences)
-                  </label>
-                  <textarea
-                    value={aiDescription}
-                    onChange={(e) => setAiDescription(e.target.value)}
-                    rows={4}
-                    placeholder="e.g. I sell health insurance to SME companies in Malaysia with 10–200 employees"
-                    className="w-full px-3.5 py-3 rounded-lg bg-background-primary border border-border text-foreground-primary placeholder:text-foreground-muted text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-transparent"
-                  />
-                  <p className="text-foreground-muted text-xs mt-1.5">
-                    Claude will generate industries, job titles, company sizes,
-                    locations, keywords, and intent signals.
-                  </p>
-                </>
-              )}
+              <div className="space-y-2">
+                <textarea
+                  value={b2bDesc}
+                  onChange={(e) => setB2bDesc(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleB2BBuild(); }}
+                  placeholder="e.g. SME business owners in Malaysia with 5–50 employees who need life or fire insurance but haven't been approached yet"
+                  rows={3}
+                  className="w-full resize-none rounded-xl border border-border bg-background-elevated px-4 py-3 text-sm text-foreground-primary placeholder:text-foreground-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 transition-all"
+                />
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-foreground-muted">
+                    {b2bDesc.length > 0 && `${b2bDesc.length} chars · `}Press ⌘+Enter to generate
+                  </span>
+                  <Button
+                    onClick={handleB2BBuild}
+                    isLoading={b2bBuilding}
+                    leftIcon={<Sparkles className="h-4 w-4" />}
+                    disabled={b2bDesc.trim().length < 10}
+                  >
+                    {b2bBuilding ? "Claude is thinking…" : "Build ICP with AI"}
+                  </Button>
+                </div>
+              </div>
 
-              {(modalMode === "manual" || modalMode === "edit") && (
-                <>
-                  <Input
-                    label="ICP Name"
-                    placeholder="e.g. Malaysian SME Health Insurance"
-                    value={modalMode === "edit" ? editForm.name : manualForm.name}
-                    onChange={(e) =>
-                      modalMode === "edit"
-                        ? setEditForm((f) => ({ ...f, name: e.target.value }))
-                        : setManualForm((f) => ({ ...f, name: e.target.value }))
-                    }
-                  />
-                  <div>
-                    <label className="block text-sm font-medium text-foreground-primary mb-1.5">
-                      Description
-                    </label>
-                    <textarea
-                      rows={3}
-                      placeholder="Brief description of this ICP"
-                      className="w-full px-3.5 py-3 rounded-lg bg-background-primary border border-border text-foreground-primary placeholder:text-foreground-muted text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-transparent"
-                      value={
-                        modalMode === "edit"
-                          ? editForm.description
-                          : manualForm.description
-                      }
-                      onChange={(e) =>
-                        modalMode === "edit"
-                          ? setEditForm((f) => ({
-                              ...f,
-                              description: e.target.value,
-                            }))
-                          : setManualForm((f) => ({
-                              ...f,
-                              description: e.target.value,
-                            }))
-                      }
-                    />
+              {!b2bResult && !b2bBuilding && (
+                <div className="space-y-2 pt-1">
+                  <p className="text-xs font-medium text-foreground-muted">Try an example:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      "Insurance agents in Malaysia targeting SME motor fleets",
+                      "B2B SaaS founders in India Series A looking for group health cover",
+                      "Family takaful agents seeking new parents in KL and Selangor",
+                    ].map((ex) => (
+                      <button
+                        key={ex}
+                        type="button"
+                        onClick={() => setB2bDesc(ex)}
+                        className="rounded-full border border-border bg-background-secondary px-3 py-1.5 text-xs text-foreground-secondary hover:border-primary/30 hover:text-foreground-primary transition-colors flex items-center gap-1"
+                      >
+                        <Plus className="h-3 w-3" />
+                        {ex}
+                      </button>
+                    ))}
                   </div>
-                  <TagInput
-                    label="Industries"
-                    value={
-                      modalMode === "edit"
-                        ? editForm.industries
-                        : manualForm.industries
-                    }
-                    onChange={(vals) =>
-                      modalMode === "edit"
-                        ? setEditForm((f) => ({ ...f, industries: vals }))
-                        : setManualForm((f) => ({ ...f, industries: vals }))
-                    }
-                    placeholder="e.g. Healthcare, Finance, Technology"
-                  />
-                  <TagInput
-                    label="Job Titles"
-                    value={
-                      modalMode === "edit"
-                        ? editForm.job_titles
-                        : manualForm.job_titles
-                    }
-                    onChange={(vals) =>
-                      modalMode === "edit"
-                        ? setEditForm((f) => ({ ...f, job_titles: vals }))
-                        : setManualForm((f) => ({ ...f, job_titles: vals }))
-                    }
-                    placeholder="e.g. CEO, HR Manager, Founder"
-                  />
-                  {modalMode === "manual" && (
-                    <>
-                      <TagInput
-                        label="Company Sizes"
-                        value={manualForm.company_sizes}
-                        onChange={(vals) =>
-                          setManualForm((f) => ({ ...f, company_sizes: vals }))
-                        }
-                        placeholder="e.g. 1-10, 11-50, 51-200"
-                      />
-                      <TagInput
-                        label="Locations"
-                        value={manualForm.locations}
-                        onChange={(vals) =>
-                          setManualForm((f) => ({ ...f, locations: vals }))
-                        }
-                        placeholder="e.g. Kuala Lumpur, Selangor, Johor"
-                      />
-                      <TagInput
-                        label="Keywords"
-                        value={manualForm.keywords}
-                        onChange={(vals) =>
-                          setManualForm((f) => ({ ...f, keywords: vals }))
-                        }
-                        placeholder="e.g. insurance, employee benefits"
-                      />
-                    </>
-                  )}
-                </>
+                </div>
               )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="flex gap-3 px-6 pb-6 flex-shrink-0">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={closeModal}
-              >
-                Cancel
-              </Button>
-              {modalMode === "ai" && (
-                <Button
-                  className="flex-1"
-                  onClick={() => buildMutation.mutate(aiDescription)}
-                  disabled={aiDescription.trim().length < 10 || buildMutation.isPending}
-                  isLoading={buildMutation.isPending}
-                >
-                  <Sparkles className="w-4 h-4 mr-1.5" />
-                  Build ICP
-                </Button>
-              )}
-              {modalMode === "manual" && (
-                <Button
-                  className="flex-1"
-                  onClick={() => createMutation.mutate(manualForm)}
-                  disabled={!manualForm.name.trim() || createMutation.isPending}
-                  isLoading={createMutation.isPending}
-                >
-                  <Save className="w-4 h-4 mr-1.5" />
-                  Save ICP
-                </Button>
-              )}
-              {modalMode === "edit" && editingIcp && (
-                <Button
-                  className="flex-1"
-                  onClick={() =>
-                    updateMutation.mutate({
-                      id: editingIcp.id,
-                      body: {
-                        name: editForm.name,
-                        description: editForm.description,
-                        industries: editForm.industries,
-                        job_titles: editForm.job_titles,
-                      },
-                    })
-                  }
-                  disabled={!editForm.name.trim() || updateMutation.isPending}
-                  isLoading={updateMutation.isPending}
-                >
-                  <Save className="w-4 h-4 mr-1.5" />
-                  Update ICP
-                </Button>
-              )}
-            </div>
+            </CardContent>
           </Card>
-        </div>
+
+          {b2bBuilding && <BuildingSkeleton label="Claude is building your B2B ICP profile…" />}
+
+          {b2bResult && !b2bBuilding && (
+            <Card className="border-primary/20">
+              <CardContent className="p-6 space-y-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                      <Sparkles className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-foreground-primary">{b2bResult.name}</h3>
+                      <p className="text-sm text-foreground-secondary mt-0.5">{b2bResult.description}</p>
+                    </div>
+                  </div>
+                  {b2bSaved ? (
+                    <div className="flex items-center gap-1.5 text-sm text-emerald-500 font-medium flex-shrink-0">
+                      <CheckCircle2 className="h-4 w-4" /> Saved
+                    </div>
+                  ) : (
+                    <Button
+                      onClick={handleB2BSave}
+                      isLoading={b2bSaving}
+                      leftIcon={<Save className="h-4 w-4" />}
+                      className="flex-shrink-0"
+                    >
+                      Save ICP
+                    </Button>
+                  )}
+                </div>
+
+                <hr className="border-border" />
+
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <ICPSection icon={<Building2 className="h-4 w-4 text-primary" />}       title="Target Industries"   items={b2bResult.industries} />
+                  <ICPSection icon={<Users className="h-4 w-4 text-amber-500" />}          title="Job Titles"          items={b2bResult.job_titles}      color="warm" />
+                  <ICPSection icon={<ChevronRight className="h-4 w-4 text-emerald-500" />} title="Seniority Levels"    items={b2bResult.seniority_levels} color="green" />
+                  <ICPSection icon={<Building2 className="h-4 w-4 text-violet-500" />}    title="Company Sizes"       items={b2bResult.company_sizes}   color="warm" />
+                  <ICPSection icon={<MapPin className="h-4 w-4 text-primary" />}           title="Locations"           items={b2bResult.locations} />
+                  <ICPSection icon={<Tags className="h-4 w-4 text-amber-500" />}           title="Keywords"            items={b2bResult.keywords}        color="warm" />
+                  <ICPSection icon={<Zap className="h-4 w-4 text-red-500" />}              title="Intent Signals"      items={b2bResult.intent_signals}  color="hot" />
+                  <ICPSection icon={<Search className="h-4 w-4 text-primary" />}           title="Search Queries"      items={b2bResult.search_queries} />
+                </div>
+
+                {b2bSaved && (
+                  <div className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground-primary">ICP saved successfully</p>
+                      <p className="text-xs text-foreground-muted mt-0.5">Go to Leads and click Generate to find matching leads.</p>
+                    </div>
+                    <a
+                      href="/dashboard/leads"
+                      className="flex-shrink-0 flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primary/90 transition-colors"
+                    >
+                      Generate Leads <ChevronRight className="h-3.5 w-3.5" />
+                    </a>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
 
-      {/* Delete Confirmation */}
-      {deletingIcp && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-sm shadow-2xl border-border">
-            <div className="p-6 text-center">
-              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-hot-light">
-                <Trash2 className="h-6 w-6 text-hot" />
+      {/* ── B2C MODE ──────────────────────────────────────────────────────────── */}
+      {mode === "b2c" && (
+        <>
+          <Card>
+            <CardContent className="p-6 space-y-4">
+              <div className="flex items-start gap-4">
+                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-amber-500/10">
+                  <Heart className="h-5 w-5 text-amber-500" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-foreground-primary">Who is your ideal individual prospect?</h2>
+                  <p className="text-sm text-foreground-muted">Describe the life stage or event — Claude finds the signals.</p>
+                </div>
               </div>
-              <h3 className="text-lg font-semibold text-foreground-primary">
-                Delete ICP
-              </h3>
-              <p className="mt-2 text-sm text-foreground-secondary">
-                Delete <span className="font-medium text-foreground-primary">{deletingIcp.name}</span>? This cannot be undone.
-              </p>
-              <div className="mt-6 flex gap-3">
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => setDeletingIcp(null)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="danger"
-                  className="flex-1"
-                  onClick={() => deleteMutation.mutate(deletingIcp.id)}
-                  isLoading={deleteMutation.isPending}
-                >
-                  Delete
-                </Button>
+
+              {/* Market + Insurance focus row */}
+              <div className="flex gap-3 flex-wrap">
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-foreground-secondary">Market</label>
+                  <select
+                    value={b2cMarket}
+                    onChange={(e) => setB2cMarket(e.target.value as "malaysia" | "india")}
+                    className="rounded-lg border border-border bg-background-elevated px-3 py-2 text-sm text-foreground-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20"
+                  >
+                    <option value="malaysia">Malaysia</option>
+                    <option value="india">India</option>
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1 flex-1 min-w-[160px]">
+                  <label className="text-xs font-medium text-foreground-secondary">Insurance Focus (optional)</label>
+                  <select
+                    value={b2cFocus}
+                    onChange={(e) => setB2cFocus(e.target.value)}
+                    className="rounded-lg border border-border bg-background-elevated px-3 py-2 text-sm text-foreground-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20"
+                  >
+                    <option value="">Any insurance type</option>
+                    <option value="motor">Motor</option>
+                    <option value="medical">Medical</option>
+                    <option value="life">Life</option>
+                    <option value="home">Home</option>
+                    <option value="pa">Personal Accident</option>
+                  </select>
+                </div>
               </div>
-            </div>
+
+              <div className="space-y-2">
+                <textarea
+                  value={b2cDesc}
+                  onChange={(e) => setB2cDesc(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleB2CBuild(); }}
+                  placeholder="e.g. I want to find people who just bought a new car in Kuala Lumpur aged 25-40"
+                  rows={3}
+                  className="w-full resize-none rounded-xl border border-border bg-background-elevated px-4 py-3 text-sm text-foreground-primary placeholder:text-foreground-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 transition-all"
+                />
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-foreground-muted">
+                    {b2cDesc.length > 0 && `${b2cDesc.length} chars · `}Press ⌘+Enter to generate
+                  </span>
+                  <Button
+                    onClick={handleB2CBuild}
+                    isLoading={b2cBuilding}
+                    leftIcon={<Sparkles className="h-4 w-4" />}
+                    disabled={b2cDesc.trim().length < 10}
+                    className="bg-amber-500 hover:bg-amber-500/90"
+                  >
+                    {b2cBuilding ? "Claude is thinking…" : "Build B2C Profile"}
+                  </Button>
+                </div>
+              </div>
+
+              {!b2cResult && !b2cBuilding && (
+                <div className="space-y-2 pt-1">
+                  <p className="text-xs font-medium text-foreground-muted">Try an example:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      "New car buyers in Klang Valley needing motor insurance",
+                      "Young families in KL who recently had a baby",
+                      "First-time homebuyers in Johor Bahru",
+                      "Motorcyclists in Penang aged 20-35",
+                    ].map((ex) => (
+                      <button
+                        key={ex}
+                        type="button"
+                        onClick={() => setB2cDesc(ex)}
+                        className="rounded-full border border-border bg-background-secondary px-3 py-1.5 text-xs text-foreground-secondary hover:border-amber-400/40 hover:text-foreground-primary transition-colors flex items-center gap-1"
+                      >
+                        <Plus className="h-3 w-3" />
+                        {ex}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
           </Card>
-        </div>
+
+          {b2cBuilding && <BuildingSkeleton label="Claude is building your B2C prospect profile…" />}
+
+          {b2cResult && !b2cBuilding && (
+            <Card className="border-amber-500/20">
+              <CardContent className="p-6 space-y-5">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-amber-500/10">
+                    <Heart className="h-5 w-5 text-amber-500" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-foreground-primary">B2C Prospect Profile</h3>
+                    <p className="text-sm text-foreground-secondary mt-0.5">{b2cDesc}</p>
+                  </div>
+                </div>
+
+                <hr className="border-border" />
+
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <ICPSection icon={<Users className="h-4 w-4 text-amber-500" />}       title="Life Stages"       items={b2cResult.life_stages}     color="warm" />
+                  <ICPSection icon={<Calendar className="h-4 w-4 text-primary" />}      title="Age Ranges"        items={b2cResult.age_ranges} />
+                  <ICPSection icon={<DollarSign className="h-4 w-4 text-emerald-500" />} title="Income Brackets"   items={b2cResult.income_brackets} color="green" />
+                  <ICPSection icon={<Zap className="h-4 w-4 text-red-500" />}           title="Life Events"       items={b2cResult.life_events}     color="hot" />
+                  <ICPSection icon={<Heart className="h-4 w-4 text-amber-500" />}       title="Insurance Needs"   items={b2cResult.insurance_needs} color="warm" />
+                  <ICPSection icon={<MapPin className="h-4 w-4 text-primary" />}        title="Locations"         items={b2cResult.locations} />
+                  <ICPSection icon={<Database className="h-4 w-4 text-blue-500" />}    title="Data Sources"      items={b2cResult.data_sources}    color="blue" />
+                  <ICPSection icon={<Search className="h-4 w-4 text-primary" />}        title="Search Angles"     items={b2cResult.search_queries} />
+                </div>
+
+                <hr className="border-border" />
+
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <InfoRow
+                    icon={<Clock className="h-4 w-4 text-primary" />}
+                    label="Outreach Timing"
+                    value={b2cResult.outreach_timing}
+                  />
+                  <InfoRow
+                    icon={<Smartphone className="h-4 w-4 text-emerald-500" />}
+                    label="Outreach Channel"
+                    value={b2cResult.outreach_channel}
+                  />
+                  <InfoRow
+                    icon={<Globe className="h-4 w-4 text-amber-500" />}
+                    label="Language"
+                    value={b2cResult.language_preference}
+                  />
+                </div>
+
+                <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground-primary">Profile ready</p>
+                    <p className="text-xs text-foreground-muted mt-0.5">
+                      Use these signals to build B2C lead scraping campaigns.
+                    </p>
+                  </div>
+                  <a
+                    href="/dashboard/leads"
+                    className="flex-shrink-0 flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-500/90 transition-colors"
+                  >
+                    Generate Leads <ChevronRight className="h-3.5 w-3.5" />
+                  </a>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
     </div>
+  );
+}
+
+// ── Shared loading skeleton ────────────────────────────────────────────────────
+
+function BuildingSkeleton({ label }: { label: string }) {
+  return (
+    <Card>
+      <CardContent className="p-6">
+        <div className="flex items-center gap-3 mb-5">
+          <Loader2 className="h-5 w-5 text-primary animate-spin" />
+          <span className="text-sm font-medium text-foreground-primary">{label}</span>
+        </div>
+        <div className="space-y-3">
+          {[80, 60, 70, 50, 65].map((w, i) => (
+            <div key={i} className="h-3 rounded-full bg-border animate-pulse" style={{ width: `${w}%` }} />
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

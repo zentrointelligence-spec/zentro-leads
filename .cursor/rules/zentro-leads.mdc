@@ -4,12 +4,13 @@ alwaysApply: true
 ---
 
 # ════════════════════════════════════════════════
-# ZENTRO LEADS — CURSOR AI RULES
+# ZENTRO LEADS — CURSOR AI RULES (v2 — May 2026)
 # ════════════════════════════════════════════════
 
 ## WHO YOU ARE
 You are a senior full-stack engineer building Zentro Leads —
-an AI-powered lead generation SaaS platform.
+an AI-powered B2B + B2C lead generation SaaS for insurance
+agencies in Malaysia and India. Parent brand: Zentro Intelligence.
 You have full context of this codebase and never ask
 basic clarifying questions about the stack.
 
@@ -17,7 +18,7 @@ basic clarifying questions about the stack.
 Zentro Leads is a standalone lead generation tool that:
 - Scrapes leads from Google Maps, websites, LinkedIn (public), job boards
 - Builds AI ICP profiles using Claude API
-- Scores leads 0-100 with intent signals
+- Scores leads 0–100 with intent signals (B2B and B2C separate models)
 - Verifies emails via SMTP (no Hunter.io dependency)
 - Pushes hot leads (≥85) to ZIMS automatically
 - Has AI content generator, landing pages, WhatsApp broadcasts
@@ -34,11 +35,16 @@ Same auth pattern. Same conventions. Different database.
 - SQLAlchemy 2.0 async (asyncpg driver)
 - PostgreSQL (all tables prefixed zl_)
 - Redis (all keys prefixed zl:*)
+- Elasticsearch (full-text + hybrid search)
+- Pinecone (vector similarity search)
 - Alembic for migrations
 - Pydantic v2 for all schemas
 - JWT HS256, httpOnly cookies (zentro_session + zentro_user)
 - Python-jose + passlib[bcrypt]
-- Anthropic SDK (claude-sonnet-4-20250514)
+- Anthropic SDK — claude-sonnet-4-20250514 (ICP building)
+- OpenAI SDK — gpt-4o-mini (outreach drafts, NL search, scoring explanation)
+- Google Generative AI SDK — gemini-flash-lite (bulk normalization)
+- XGBoost (dynamic lead scoring model)
 - APScheduler for cron jobs
 - Playwright + BeautifulSoup for scraping
 - n8n for pipeline orchestration
@@ -57,9 +63,35 @@ Same auth pattern. Same conventions. Different database.
 
 ### Infrastructure
 - Docker Compose for local dev
-- Azure deployment (App Service + Static Web Apps + PostgreSQL + Redis)
-- n8n self-hosted on Azure VM
+- Azure deployment (Container Apps + Static Web Apps + PostgreSQL + Redis)
+- n8n self-hosted on Azure Container Apps
 - GitHub Actions for CI/CD
+
+## KNOWN CRITICAL BUGS — FIX BEFORE ADDING FEATURES
+
+1. **LeadStatus enum mismatch** — `VIEWED` and `WON` are in `models.py` but NOT in the
+   DB migration enum for `zl_leads.status`. Add them in a new migration before any code
+   path sets these values.
+
+2. **ZLCompany missing columns** — `generator.py` writes `twitter_url` and `tiktok_url`
+   to columns that do not exist in `ZLCompany` model or any migration. Add a migration.
+
+3. **Jobs auth bug** — `_get_admin_user` in `jobs/routes.py` never declares a `Cookie`
+   parameter so `zentro_session` is always `None` → all manual job triggers and
+   `GET /jobs/signals/recent` return 401 for real users. Fix: add
+   `zentro_session: Optional[str] = Cookie(default=None)` to `_get_admin_user`.
+
+4. **`lib/api.ts` ICP list mismatch** — `icpApi.list()` is typed as returning `ICP[]`
+   but the backend returns `{ items: ICP[], total: number }`. Fix the type and consumers.
+
+5. **`lib/api.ts` ICP delete mismatch** — `icpApi.delete()` tries to parse JSON but
+   backend returns 204 No Content. Fix to handle empty response.
+
+6. **`lib/api.ts` CSV export mismatch** — `leadsApi.exportCSV()` expects `{ download_url }`
+   but backend returns a raw CSV stream. Fix to stream/blob download.
+
+7. **`20260502zims` migration** — Adds columns that `62069b40a737` may already have created
+   on a fresh DB (duplicate column error). Wrap with `IF NOT EXISTS` guards or restructure.
 
 ## DATABASE CONVENTIONS
 - All tables prefixed: zl_
@@ -68,13 +100,24 @@ Same auth pattern. Same conventions. Different database.
 - Async sessions only — never use sync SQLAlchemy
 - Always include created_at + updated_at
 - Alembic migration for every model change
+- Use existing models in models.py before creating new ones
+
+## AI MODEL ASSIGNMENT — STRICT
+- ICP building → Claude Sonnet (`claude-sonnet-4-20250514`)
+- Outreach drafts + NL search + scoring explanation → GPT-4o Mini
+- Bulk labeling + industry normalization → Gemini Flash-Lite
+- Dynamic lead scoring → XGBoost
+- Embeddings → `text-embedding-3-small` (OpenAI)
+- Never use Claude for GPT-4o Mini tasks or vice versa
 
 ## API CONVENTIONS
 - All routes prefixed: /api/v1/
 - Auth routes: /api/v1/auth/
 - Leads routes: /api/v1/leads/
 - ICP routes: /api/v1/icp/
+- Settings routes: /api/v1/settings/
 - Always return typed Pydantic response schemas
+- All backend routes MUST use `get_current_user_dep` (not `get_current_user` directly)
 - HTTP 422 for validation errors
 - HTTP 429 for plan limit exceeded (include upgrade_url)
 - HTTP 401 for auth errors
@@ -85,17 +128,25 @@ Same auth pattern. Same conventions. Different database.
   zentro_session = JWT (httpOnly, secure, sameSite=lax)
   zentro_user = JSON display data (readable by JS)
 - proxy.ts reads zentro_session and protects /dashboard/*
-- Backend dependency: get_current_user() reads cookie
+- Backend dependency: always use get_current_user_dep() — it includes DB injection
 - Token expiry: 24 hours
 
 ## FRONTEND CONVENTIONS
-- All API calls go through lib/api.ts (server-only)
+- All API calls go through lib/api.ts ONLY — never use fetch() directly in components
 - All forms use Zod schema + React Hook Form
 - All mutations use TanStack Query useMutation
 - Loading states: always show skeleton, never blank
 - Error states: always show toast notification
 - Empty states: always show CTA, never blank
 - No hardcoded strings — use constants files
+- No localStorage anywhere — use cookies + server state
+
+## FILE STRUCTURE RULES
+- New backend features go in backend/app/{feature}/
+- Each feature folder needs: routes.py, schemas.py, __init__.py
+- New DB tables need a migration in alembic/versions/
+- New frontend pages go in frontend/app/dashboard/{feature}/page.tsx
+- Shared UI components go in frontend/components/ui/
 
 ## SCRAPING RULES
 - Always add random delay between requests (1.5–4 seconds)
@@ -120,17 +171,28 @@ WARM      60–84
 POTENTIAL 40–59
 COLD      < 40
 
+B2B and B2C leads use SEPARATE scoring models. Never mix them.
+
 ## ZIMS SYNC RULES
 - Only push HOT leads (score ≥ 85) to ZIMS automatically
 - Push endpoint: POST {ZIMS_API_URL}/api/leads/import
 - Header: X-Internal-Key: {ZIMS_INTERNAL_API_KEY}
 - Always async — never block lead generation on ZIMS sync
+- Per-user ZIMS config takes priority over global env config
+- Include agent_id + agent_email in every ZIMS push payload
 
 ## CACHING RULES (REDIS)
 - Lead search results: TTL 1 hour  → key: zl:leads:{sha256_of_query}
 - Email lookups: TTL 7 days        → key: zl:email:{domain}:{name_hash}
 - ICP builds: TTL 24 hours         → key: zl:icp:{user_id}:{description_hash}
 - Always check cache before any API call or scrape
+
+## ENV VARIABLE RULES
+- Never hardcode API keys
+- Always read from settings (config.py via Pydantic BaseSettings)
+- Adding a new env variable REQUIRES updating BOTH config.py AND .env.example
+- New keys needed (not yet in config): OPENAI_API_KEY, GOOGLE_GEMINI_API_KEY,
+  PINECONE_API_KEY, PINECONE_INDEX, ELASTICSEARCH_URL, XGBOOST_MODEL_PATH
 
 ## CODE QUALITY RULES
 - Every function must have a docstring
@@ -142,7 +204,7 @@ COLD      < 40
 - Run `npx tsc --noEmit` — must pass clean
 - Run `npm run lint` — must pass clean
 
-## WHAT NOT TO BUILD (UNLESS EXPLICITLY TOLD)
+## DO NOT BUILD (UNLESS EXPLICITLY TOLD)
 - Do NOT use Apollo.io API
 - Do NOT use Hunter.io API
 - Do NOT use NeverBounce API
@@ -151,6 +213,8 @@ COLD      < 40
 - Do NOT use asChild in any shadcn component
 - Do NOT use middleware.ts — always proxy.ts
 - Do NOT use localStorage — use cookies + server state
+- Do NOT use WidthType.PERCENTAGE in any docx generation
+- Do NOT write synchronous SQLAlchemy queries
 
 ## RESPONSE STYLE
 - Always generate complete files — no truncation

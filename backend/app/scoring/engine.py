@@ -1,6 +1,10 @@
 """
 Lead scoring (100-point) and AI outreach generation.
 Weights are fixed per product rules — do not change without explicit instruction.
+
+Scoring priority:
+  1. XGBoost ML model (if trained and model file present)
+  2. Deterministic 100-point engine (fallback, always available)
 """
 
 from __future__ import annotations
@@ -8,10 +12,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from anthropic import AsyncAnthropic
 from loguru import logger
 
+from app.ai.gpt_client import generate_outreach_draft, generate_score_explanation
 from app.config import settings
+from app.scoring.features import extract_b2b_features
+from app.scoring.ml_scorer import predict_lead_score
 
 SIZE_ORDER = ["1-10", "10-50", "50-200", "200-500", "500+"]
 
@@ -153,14 +159,61 @@ def calculate_lead_score(
     """
     100-point scoring system. Returns ``{score, tier, breakdown}``.
 
-    Weights (fixed):
-    - company size: max 30
-    - role: max 25
-    - industry: max 20
-    - intent signals: max 15
-    - email: max 10
-    - icp match bonus: up to 25
+    Priority:
+      1. XGBoost ML model (uses extract_b2b_features; returns None if model absent)
+      2. Deterministic weights (company_size:30, role:25, industry:20,
+         signals:15, email:10, icp_bonus:up_to_25)
     """
+    # ── ML inference (try first) ─────────────────────────────────────────────
+    try:
+        features  = extract_b2b_features(lead=person, company=company, icp=icp)
+        ml_score  = predict_lead_score(features, model_type="b2b")
+    except Exception as _exc:
+        logger.debug(f"[engine] ML feature extraction skipped: {_exc}")
+        ml_score = None
+
+    if ml_score is not None:
+        # Compute deterministic breakdown for transparency (the total is overridden)
+        _size   = _company_size_score(company.get("employee_range"), icp.get("company_sizes") or [])
+        _role   = _role_score_fixed(
+            person.get("job_title") or "",
+            icp.get("job_titles") or [],
+            icp.get("seniority_levels") or [],
+        )
+        _ind    = _industry_score(company.get("industry") or "", icp.get("industries") or [])
+        _sig, signals_present = _signals_score(
+            company, person, icp.get("intent_signals") or [], extra_signals=extra_signals
+        )
+        _em     = _email_score(person)
+        _icp_b  = (
+            25 if (icp_match_score or 0) >= 90
+            else 15 if (icp_match_score or 0) >= 75
+            else 10 if (icp_match_score or 0) >= 60
+            else 0
+        )
+        tier = (
+            "hot"       if ml_score >= 85
+            else "warm" if ml_score >= 60
+            else "potential" if ml_score >= 40
+            else "cold"
+        )
+        return {
+            "score": ml_score,
+            "tier":  tier,
+            "breakdown": {
+                "company_size":      _size,
+                "role":              _role,
+                "industry":          _ind,
+                "signals":           _sig,
+                "email":             _em,
+                "icp_match_bonus":   _icp_b,
+                "signals_detected":  signals_present,
+                "ml_model":          True,
+                "ml_score":          ml_score,
+            },
+        }
+
+    # ── Deterministic fallback ───────────────────────────────────────────────
     size_score = _company_size_score(company.get("employee_range"), icp.get("company_sizes") or [])
     role_score = _role_score_fixed(
         person.get("job_title") or "",
@@ -234,77 +287,58 @@ async def generate_ai_outreach(
     competitor_tool: str | None = None,
 ) -> dict[str, str]:
     """
-    Generate personalised outreach using Claude.
-    Includes WHY NOW urgency + competitor switch messaging.
+    Generate personalised multi-channel outreach using GPT-4o Mini.
 
-    Falls back to deterministic templates when ANTHROPIC_API_KEY is missing.
+    Wraps generate_outreach_draft() for all three channels (WhatsApp, email,
+    SMS) and returns them in the legacy flat dict format expected by the lead
+    generator so no other code needs to change.
     """
     first = person.get("first_name") or (person.get("full_name") or "there").split()[0]
     cname = company.get("name") or "your company"
 
-    if not settings.ANTHROPIC_API_KEY:
-        return {
-            "whatsapp_message": f"Hi {first}, I help companies like {cname} with growth — quick question?",
-            "email_subject": f"Quick question for {cname}",
-            "email_body": (
-                f"Hi {first},\n\nI noticed {cname} and wanted to reach out with something relevant.\n\n"
-                "Would you be open to a short chat?"
-            ),
-            "linkedin_note": f"Hi {first}, would love to connect.",
-        }
+    city = company.get("city") or ""
+    country = company.get("country") or ""
+    location = f"{city}, {country}".strip(", ") or "Malaysia"
 
-    urgency = why_now or "Timing is ideal to reach out."
-    competitor_line = ""
+    lead_dict: dict[str, Any] = {
+        "person_name":    person.get("full_name") or first,
+        "company_name":   cname,
+        "location":       location,
+        "intent_signals": signals,
+        "icp_reason":     why_now or icp_description or "",
+        "lead_score":     0,
+    }
     if competitor_tool:
-        competitor_line = f"\n- They currently use: {competitor_tool} — your pitch should show why switching makes sense."
+        lead_dict["icp_reason"] = (lead_dict["icp_reason"] + f" (currently using {competitor_tool})").strip()
 
-    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-    prompt = f"""You are an expert sales copywriter for B2B outreach.
+    # Infer insurance type from ICP description or default
+    insurance_type = icp_description.split(".")[0][:60] if icp_description else "insurance"
 
-Seller context: {icp_description}
+    # Generate WhatsApp + email drafts in parallel
+    import asyncio as _asyncio
 
-Lead details:
-- Name: {person.get("full_name")}
-- Title: {person.get("job_title")}
-- Company: {company.get("name")}
-- Industry: {company.get("industry")}
-- Size: {company.get("employee_range")} employees
-- Location: {company.get("city")}, {company.get("country")}
-- Signals detected: {signals}
-
-WHY NOW (urgency):
-{urgency}{competitor_line}
-
-CRITICAL RULES:
-1. Open with the WHY NOW urgency — make it feel timely, not cold.
-2. Mention a specific signal (funding, hiring, expansion, competitor tool).
-3. Keep it short, conversational, and personalised.
-4. If they use a competitor tool, subtly hint at a better alternative.
-
-Return ONLY valid JSON (no markdown, no explanation):
-{{
-  "whatsapp_message": "<max 200 chars, conversational, open with urgency>",
-  "email_subject": "<max 60 chars, specific not generic>",
-  "email_body": "<max 350 chars, 2 short paragraphs, open with WHY NOW>",
-  "linkedin_note": "<max 150 chars, connection request with hook>"
-}}"""
-
-    message = await client.messages.create(
-        model="claude-sonnet-4-5",
-        max_tokens=512,
-        messages=[{"role": "user", "content": prompt}],
+    wa_draft, em_draft = await _asyncio.gather(
+        generate_outreach_draft(lead_dict, "whatsapp", "en", insurance_type),
+        generate_outreach_draft(lead_dict, "email",    "en", insurance_type),
     )
-    raw = message.content[0].text.strip()
-    raw = _strip_json_fences(raw)
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError as exc:
-        logger.warning(f"Failed to parse outreach JSON: {exc} raw={raw[:200]!r}")
-        first = person.get("first_name") or "there"
-        cname = company.get("name") or "your company"
-        return {
-            "whatsapp_message": f"Hi {first}, I help companies like {cname} — quick question?",
-            "email_subject": f"Quick question for {cname}",
-            "email_body": f"Hi {first},\n\nI noticed {cname} and wanted to reach out.",
-            "linkedin_note": f"Hi {first}, would love to connect.",
-        }
+
+    return {
+        "whatsapp_message": wa_draft.get("body", f"Hi {first}, quick question about {cname}?"),
+        "email_subject":    em_draft.get("subject", f"Quick question for {cname}"),
+        "email_body":       em_draft.get("body", f"Hi {first},\n\nI noticed {cname} and wanted to reach out."),
+        "linkedin_note":    f"Hi {first}, {wa_draft.get('call_to_action', 'would love to connect.')}",
+    }
+
+
+async def explain_lead_score(
+    lead: dict[str, Any],
+    score_breakdown: dict[str, Any],
+) -> str:
+    """
+    Return a human-readable GPT-4o Mini explanation of the lead's score.
+
+    This is a thin wrapper around gpt_client.generate_score_explanation()
+    kept here so the scoring module remains the single import point for
+    score-related functionality.
+    """
+    return await generate_score_explanation(lead, score_breakdown)

@@ -7,12 +7,13 @@ import { z } from "zod";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Eye, EyeOff, Radar, Brain, Zap, MessageCircle, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, Brain, Zap, MessageCircle } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { ParticleField } from "@/components/ui/particle-field";
+import { readAuthFetchResult } from "@/lib/parse-json-client";
 
 const schema = z.object({
   email: z.string().email("Enter a valid email"),
@@ -20,6 +21,22 @@ const schema = z.object({
 });
 
 type LoginForm = z.infer<typeof schema>;
+
+function ZentroMark() {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-orange-600 via-amber-500 to-emerald-500 shadow-[0_0_24px_rgba(234,88,12,0.4)]">
+        <svg viewBox="0 0 44 44" className="h-6 w-6" aria-hidden="true">
+          <path d="M12 13.5h17.6L14.4 30.5H32" fill="none" stroke="#0B1120" strokeWidth="4.8" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M28 11c5.1 2.1 8 6 8 11s-2.9 8.9-8 11" fill="none" stroke="#fff7ed" strokeWidth="2" strokeLinecap="round" opacity=".95" />
+        </svg>
+      </div>
+      <div className="leading-none">
+        <div className="text-lg font-black tracking-tight text-white">Zentro Intelligence</div>
+      </div>
+    </div>
+  );
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -38,8 +55,11 @@ export default function LoginPage() {
         credentials: "include",
         body: JSON.stringify(data),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.detail ?? "Login failed");
+      const result = await readAuthFetchResult(res);
+      if (!result.success) {
+        toast.error(result.message);
+        return;
+      }
       toast.success("Welcome back!");
       router.push("/dashboard");
     } catch (err: unknown) {
@@ -51,66 +71,58 @@ export default function LoginPage() {
     <div className="relative flex min-h-screen overflow-hidden">
       <ParticleField />
 
-      {/* Left side — dark gradient with branding */}
-      <div className="hidden lg:flex lg:w-[42%] relative flex-col justify-between bg-gradient-to-br from-stone-900 via-stone-800 to-orange-950 p-12 text-white">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(249,115,22,0.25)_0%,_transparent_60%)]" />
+      {/* Left panel */}
+      <div className="hidden lg:flex lg:w-[42%] relative flex-col justify-between bg-gradient-to-br from-[#0B1120] via-[#0f1a2e] to-[#1a0e08] p-12 text-white">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(234,88,12,0.22)_0%,transparent_60%)]" />
         <div className="relative z-10">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent shadow-glow">
-              <Radar className="h-5 w-5 text-white" />
-            </div>
-            <span className="text-xl font-bold tracking-tight">LeadRadar</span>
-          </div>
+          <ZentroMark />
         </div>
 
         <div className="relative z-10 space-y-8">
-          <h2 className="text-4xl font-extrabold leading-tight tracking-tight">
-            Find buyers before{" "}
-            <span className="text-gradient">your competitors do</span>
+          <h2 className="text-4xl font-black leading-tight tracking-tight">
+            From Lead to Policy —{" "}
+            <span className="bg-gradient-to-r from-orange-400 to-amber-400 bg-clip-text text-transparent">
+              Fully Automated
+            </span>
           </h2>
           <div className="space-y-5">
             {[
-              { icon: Brain, title: "AI-powered lead scoring", desc: "Every lead scored 0-100 with explanation" },
-              { icon: Zap, title: "Real-time intent signals", desc: "Know who's ready to buy RIGHT NOW" },
-              { icon: MessageCircle, title: "One-click outreach", desc: "WhatsApp, Email & LinkedIn in one click" },
+              { icon: Brain, title: "AI lead scoring", desc: "Every lead scored 0–100 with transparent reasoning" },
+              { icon: Zap, title: "Real-time intent signals", desc: "Know which companies are ready to buy right now" },
+              { icon: MessageCircle, title: "One-click outreach", desc: "WhatsApp and email drafts generated automatically" },
             ].map((item) => (
               <div key={item.title} className="flex items-start gap-4">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 backdrop-blur-sm flex-shrink-0">
-                  <item.icon className="h-5 w-5 text-accent" />
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-500/10 text-orange-300">
+                  <item.icon className="h-5 w-5" />
                 </div>
                 <div>
-                  <p className="font-semibold text-sm">{item.title}</p>
-                  <p className="text-xs text-white/50 mt-0.5">{item.desc}</p>
+                  <p className="text-sm font-black text-white">{item.title}</p>
+                  <p className="mt-0.5 text-xs text-slate-400">{item.desc}</p>
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        <p className="relative z-10 text-xs text-white/30">
-          &copy; 2025 LeadRadar. All rights reserved.
+        <p className="relative z-10 text-xs text-slate-600">
+          &copy; 2026 Zentro Intelligence Sdn Bhd
         </p>
       </div>
 
-      {/* Right side — form */}
+      {/* Right panel — form */}
       <div className="relative z-10 flex flex-1 items-center justify-center bg-background-primary p-4">
         <div className="w-full max-w-sm">
           {/* Mobile logo */}
-          <div className="flex items-center gap-3 mb-10 lg:hidden">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent shadow-glow">
-              <Radar className="h-5 w-5 text-white" />
-            </div>
-            <span className="text-xl font-bold text-foreground-primary tracking-tight">
-              LeadRadar
-            </span>
+          <div className="mb-10 flex items-center gap-3 lg:hidden">
+            <ZentroMark />
           </div>
 
           <div className="mb-8">
-            <h1 className="text-3xl font-extrabold text-foreground-primary tracking-tight">
+            <h1 className="text-3xl font-black tracking-tight text-foreground-primary">
               Welcome back
             </h1>
-            <p className="text-sm text-foreground-secondary mt-1.5">
-              Sign in to your account to continue
+            <p className="mt-1.5 text-sm text-foreground-secondary">
+              Sign in to your Zentro Intelligence account
             </p>
           </div>
 
@@ -151,14 +163,14 @@ export default function LoginPage() {
             </div>
 
             <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-sm text-foreground-secondary cursor-pointer">
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground-secondary">
                 <input
                   type="checkbox"
-                  className="h-4 w-4 rounded-lg border-border text-primary focus:ring-primary"
+                  className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
                 />
                 Remember me
               </label>
-              <Link href="#" className="text-sm font-medium text-primary hover:text-primary-dark transition-colors">
+              <Link href="#" className="text-sm font-medium text-primary transition-colors hover:text-primary-dark">
                 Forgot password?
               </Link>
             </div>
@@ -172,10 +184,16 @@ export default function LoginPage() {
             <Separator className="my-5" />
             <p className="text-center text-sm text-foreground-secondary">
               Don&apos;t have an account?{" "}
-              <Link href="/register" className="font-semibold text-primary hover:text-primary-dark transition-colors">
-                Create one
+              <Link href="/register" className="font-semibold text-primary transition-colors hover:text-primary-dark">
+                Create one free
               </Link>
             </p>
+          </div>
+
+          <div className="mt-6 text-center">
+            <Link href="/" className="text-xs text-slate-600 transition hover:text-slate-400">
+              ← Back to zentro.io
+            </Link>
           </div>
         </div>
       </div>

@@ -13,6 +13,8 @@ export interface ParsedLeadsQuery {
   has_email?: boolean;
   zims_synced?: boolean;
   min_icp_match?: number;
+  lead_type?: "b2b" | "b2c";
+  market?: "malaysia" | "india";
   view: LeadsViewMode;
 }
 
@@ -39,6 +41,9 @@ export function parseLeadsQuery(
   // Default to 70% ICP match filter; "0" means show all
   const min_icp_match = icpMin === "0" ? 0 : icpMin ? Number(icpMin) : 70;
 
+  const lt  = g("lead_type");
+  const mkt = g("market");
+
   return {
     page,
     per_page,
@@ -48,6 +53,8 @@ export function parseLeadsQuery(
     has_email: he === "true" ? true : he === "false" ? false : undefined,
     zims_synced: zm === "true" ? true : zm === "false" ? false : undefined,
     min_icp_match,
+    lead_type: lt === "b2b" || lt === "b2c" ? lt : undefined,
+    market: mkt === "malaysia" || mkt === "india" ? mkt : undefined,
     view,
   };
 }
@@ -68,5 +75,7 @@ export function stringifyLeadsQuery(q: ParsedLeadsQuery): string {
   if (q.zims_synced === true) p.set("zims", "true");
   if (q.zims_synced === false) p.set("zims", "false");
   if (q.min_icp_match !== undefined) p.set("icp_min", String(q.min_icp_match));
+  if (q.lead_type) p.set("lead_type", q.lead_type);
+  if (q.market)    p.set("market", q.market);
   return p.toString();
 }

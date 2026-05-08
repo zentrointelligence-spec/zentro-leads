@@ -66,9 +66,11 @@ async def register(
     db: AsyncSession = Depends(get_db),
 ):
     """Register a new Zentro Leads account."""
+    normalised_email = body.email.lower().strip()
+
     # Check duplicate email
     existing = await db.execute(
-        select(ZLUser).where(ZLUser.email == body.email)
+        select(ZLUser).where(ZLUser.email == normalised_email)
     )
     if existing.scalar_one_or_none():
         raise HTTPException(
@@ -77,7 +79,7 @@ async def register(
         )
 
     user = ZLUser(
-        email          = body.email,
+        email          = normalised_email,
         hashed_password= hash_password(body.password),
         full_name      = body.full_name,
         company_name   = body.company_name,
@@ -110,8 +112,9 @@ async def login(
     db: AsyncSession = Depends(get_db),
 ):
     """Login and receive session cookies."""
+    normalised_email = body.email.lower().strip()
     result = await db.execute(
-        select(ZLUser).where(ZLUser.email == body.email, ZLUser.is_active == True)
+        select(ZLUser).where(ZLUser.email == normalised_email, ZLUser.is_active == True)
     )
     user = result.scalar_one_or_none()
 

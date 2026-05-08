@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Image from "next/image";
 import { cn } from "@/lib/cn";
 
 interface AvatarProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -55,10 +56,13 @@ const Avatar = React.forwardRef<HTMLDivElement, AvatarProps>(
         {...props}
       >
         {src ? (
-          <img
+          <Image
             src={src}
-            alt={name}
-            className="h-full w-full object-cover"
+            alt={name || "User"}
+            fill
+            unoptimized
+            className="object-cover"
+            sizes="56px"
           />
         ) : (
           <span className="font-semibold text-white">{initials}</span>
